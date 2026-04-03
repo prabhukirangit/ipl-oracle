@@ -1,6 +1,6 @@
 # IPL Oracle
 
-A MiroFish-style swarm intelligence engine for IPL cricket match prediction — spawns ~60 autonomous agents per match and runs 100 parallel simulations to surface an emergent win probability.
+A MiroFish-style swarm intelligence engine for IPL cricket match prediction — spawns ~30 autonomous agents per match and runs configurable parallel simulations (default 10) to surface an emergent win probability.
 
 ---
 
@@ -19,7 +19,7 @@ IPL Oracle builds a digital cricket world that plays itself out via Monte Carlo 
 - **MiroFish swarm engine** — one autonomous agent per match entity (every player, coach, stadium, pitch, weather system, crowd, umpire)
 - **Monte Carlo simulations** — ball-by-ball T20 match loop run N times (up to 50,000) with unique random seeds, sampling outcomes from weighted probability distributions shaped by 50+ hidden institutional factors. Aggregate win probability + 95% CI from the full distribution. Persona/Hybrid: default 10, max 100 sims. Probabilistic: default 500, max 50,000 sims.
 - **Hybrid LLM mode** — LLM reasoning fires at high-leverage moments via 5 explicit triggers: death overs (18+), wicket clusters (3+ down), close chases (<=40 in last 5 overs), post-wicket pressure balls, and pressure index >= 0.65. Routine balls use fast probabilistic sampling (~15-20% of balls use LLM). Built-in rate limiting: max 5 concurrent LLM calls with 200ms minimum spacing, plus retry with exponential backoff (2s/4s/8s) on 429 errors.
-- **60+ agents per match** — PlayerAgent x 22+, CoachAgent x 2, CaptainAgent x 2, StadiumAgent, PitchAgent, WeatherAgent, CrowdAgent, UmpireAgent x 2, ReportAgent
+- **~30 agents per match** — PlayerAgent x 11 per team (22 total), CoachAgent x 2, StadiumAgent, PitchAgent, WeatherAgent, CrowdAgent, UmpireAgent x 2, ReportAgent
 - **Information-isolated agent decisions** — bowler and batsman decide concurrently via `asyncio.gather()`; neither sees the other's plan. Only the OutcomeResolver combines both decisions through a matchup matrix (slog vs yorker = wicket, pull vs bouncer = six, etc.)
 - **Dynamic Field Interception** — CaptainAgent sets fielder positions per ball; boundaries must survive both pre-sample weight suppression (4+ deep fielders reduce boundary probability) and post-sample shot-to-fielder geometric interception (drive→long_off, pull→deep_square_leg, cut→deep_point). Applies in all three modes.
 - **Live XI Cascade** — 4-level playing XI fetcher: IPLT20 (Playwright) -> Cricbuzz (stealth) -> Google News RSS -> local SQUAD_SEED. Supports partial results and fuzzy name matching. Web sources tried for IMMINENT/LIVE matches; FUTURE uses SQUAD_SEED.
@@ -45,7 +45,7 @@ Layer 1 — Data Scrapers + XI Cascade
 
 Layer 2 — Agent System
     BaseAgent (memory via Mem0, LLM via Anthropic claude-sonnet / OpenAI / Gemini / local)
-    ~60 agents spawned per match by AgentFactory
+    ~30 agents spawned per match by AgentFactory
     Profiles built once (read-only); mutable state deepcopied per sim
     18+ BallContext factors injected mathematically per ball
     Bowler + batsman decide concurrently (information-isolated)
@@ -148,6 +148,24 @@ LOCAL_LLM_MODEL=qwen2.5:14b
 Recommended models by VRAM: `qwen2.5:32b` (24GB+), `qwen2.5:14b` (10-16GB), `qwen2.5:7b` (8GB), `qwen2.5:3b` (CPU-only).
 
 Any OpenAI-compatible server works (LM Studio, vLLM, etc.) — just point `LOCAL_LLM_BASE_URL` at it.
+
+---
+
+## Simulation Modes & Recommended Settings
+
+IPL Oracle supports three simulation modes. The number of simulations is fully configurable — choose based on the mode and your time/cost budget.
+
+| Mode | Default Sims | Max Sims | LLM Calls | Approx. Time (10 sims) | Best For |
+|------|-------------|----------|-----------|------------------------|----------|
+| **Persona** | 10 | 100 | Every ball (~240/sim) | ~3-5 min | Deep analysis, maximum realism |
+| **Hybrid** | 10 | 100 | ~15-20% of balls (~40/sim) | ~1-2 min | Best balance of speed and intelligence |
+| **Probabilistic** | 500 | 50,000 | None | ~5-10 sec | Bulk Monte Carlo, no LLM cost |
+
+**Guidance:**
+- For **Persona** and **Hybrid** modes, **10 simulations is the recommended default**. Each sim makes LLM API calls, so running more increases both cost and time proportionally. 10 sims provide a solid confidence interval for most predictions.
+- For **Probabilistic** mode, run 500+ sims for tighter confidence intervals — it's pure math with no LLM overhead.
+- Time estimates assume a cloud LLM provider (Anthropic/OpenAI/Gemini). Local models (Ollama) will be slower depending on hardware.
+- If you hit rate limit (429) errors, reduce `LLM_MAX_CONCURRENT` in `.env` or increase `LLM_MIN_DELAY_MS`.
 
 ---
 
