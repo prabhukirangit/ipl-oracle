@@ -33,7 +33,6 @@ IPL Oracle builds a digital cricket world that plays itself out via Monte Carlo 
 ---
 ## Demo
 
-https://github.com/user-attachments/assets/3c5e3218-6444-438f-b9e9-9ca4143d5719
 
 ## Architecture
 
