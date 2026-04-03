@@ -1,0 +1,72 @@
+{
+  "cat_features": [
+    "batting_team",
+    "bowling_team",
+    "venue",
+    "toss_winner",
+    "toss_decision",
+    "month",
+    "batter",
+    "bowler"
+  ],
+  "numeric_features": [
+    "over",
+    "ball_no",
+    "innings",
+    "team_runs",
+    "team_balls",
+    "team_wicket",
+    "balls_remaining",
+    "wickets_in_hand",
+    "current_run_rate",
+    "required_run_rate",
+    "run_rate_diff",
+    "pressure_index",
+    "phase",
+    "is_innings_2",
+    "balls_into_innings",
+    "runs_target"
+  ],
+  "all_features": [
+    "over",
+    "ball_no",
+    "innings",
+    "team_runs",
+    "team_balls",
+    "team_wicket",
+    "balls_remaining",
+    "wickets_in_hand",
+    "current_run_rate",
+    "required_run_rate",
+    "run_rate_diff",
+    "pressure_index",
+    "phase",
+    "is_innings_2",
+    "balls_into_innings",
+    "runs_target",
+    "batting_team",
+    "bowling_team",
+    "venue",
+    "toss_winner",
+    "toss_decision",
+    "month",
+    "batter",
+    "bowler"
+  ],
+  "seasons_trained": [
+    "2020/21",
+    "2021",
+    "2022",
+    "2023"
+  ],
+  "seasons_val": [
+    "2024"
+  ],
+  "seasons_test": [
+    "2025"
+  ],
+  "test_auc": 0.7391,
+  "test_brier": 0.2388,
+  "test_accuracy": 0.6858,
+  "below_threshold": false
+}

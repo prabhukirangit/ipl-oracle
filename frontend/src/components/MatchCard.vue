@@ -18,7 +18,7 @@
 
     <div class="match-card-body">
       <p class="mc-venue">🏟 {{ match.venue }}</p>
-      <p class="mc-time">🕐 {{ match.match_time_display || '7:30 PM IST' }}</p>
+      <p class="mc-time">📅 {{ match.match_date_display || '' }} · 🕐 {{ match.match_time_display || '7:30 PM IST' }}</p>
       <p v-if="match.city" class="mc-city">📍 {{ match.city }}</p>
       <p
         v-if="match.state_details?.caveats?.length"

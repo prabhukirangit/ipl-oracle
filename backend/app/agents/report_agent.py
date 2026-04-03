@@ -307,7 +307,7 @@ class ReportAgent(BaseAgent):
             wf_text = "\n\nKey winning factors from analysis:\n" + "\n".join(wf_lines)
 
         user_prompt = (
-            f"Generate a comprehensive 4-paragraph match prediction report for {team1} vs {team2} at {venue}.\n\n"
+            f"Generate a concise match prediction analysis for {team1} vs {team2} at {venue}.\n\n"
             f"Engine: {simulation_mode} mode | {n_sims} parallel simulations\n\n"
             f"Win probabilities:\n"
             f"  {team1}: {t1_wp.get('win_pct', 0)}%  "
@@ -324,12 +324,10 @@ class ReportAgent(BaseAgent):
             f"Predicted winner: {prediction.get('winner')} "
             f"({prediction.get('confidence_label')} confidence, {prediction.get('confidence_pct')}%)"
             f"{hf_text}{wf_text}\n\n"
-            "Generate 5–10 bullet points covering the systemic factors that drove the predicted winner's edge across all simulations.\n"
-            "Focus areas: venue conditions (dew, pitch, boundary asymmetry), phase-wise dynamics (powerplay, middle, death), "
-            "spin vs pace effectiveness, pressure cascades, toss value, home advantage, collapse risk, and any hidden factors "
-            "that meaningfully shifted the win distribution.\n"
+            "Generate exactly 3–5 bullet points — no more. Cover ONLY the top systemic factors that drove the predicted winner's edge.\n"
+            "Focus areas: dew, pitch, boundary asymmetry, phase dynamics, toss value, home advantage, collapse risk.\n"
             "Do NOT name any players. Do NOT quote individual scores, sixes, strike rates, or bowling figures.\n"
-            "Each bullet: name the factor → explain how it moved the needle → cite the number from the simulation data."
+            "Each bullet: one factor → how it shifted win probability → cite one number. Keep each bullet under 30 words."
         )
 
         return await llm_client.think(
@@ -347,11 +345,11 @@ class ReportAgent(BaseAgent):
                 "advantage across all simulations (e.g., dew impact, pitch behavior, boundary asymmetry, "
                 "pressure peaks, powerplay dynamics, death-over execution, spin vs pace effectiveness, "
                 "home advantage, collapse probability, toss value).\n"
-                "- Output as 5–10 concise bullet points. No paragraphs, no headings.\n"
-                "- Each bullet should name one factor and explain how it shifted win probability with numbers."
+                "- Output as exactly 3–5 short bullet points. No paragraphs, no headings, no preamble.\n"
+                "- Each bullet: one factor, one insight, one number. Max 30 words per bullet."
             ),
             user_prompt=user_prompt,
-            max_tokens=4096,
+            max_tokens=1024,
         )
 
     def __repr__(self) -> str:

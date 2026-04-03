@@ -1,0 +1,130 @@
+{
+  "stadiums": {
+    "M. Chinnaswamy Stadium": {
+      "venue_code": "chinnaswamy",
+      "city": "Bangalore",
+      "north_boundary_m": 68,
+      "east_boundary_m": 73,
+      "south_boundary_m": 70,
+      "west_boundary_m": 69,
+      "square_leg_bias": "long",
+      "off_side_bias": "short",
+      "short_boundary_direction": "off_side",
+      "long_boundary_direction": "square_leg"
+    },
+    "Arun Jaitley Stadium": {
+      "venue_code": "arun_jaitley",
+      "city": "Delhi",
+      "north_boundary_m": 72,
+      "east_boundary_m": 75,
+      "south_boundary_m": 73,
+      "west_boundary_m": 74,
+      "square_leg_bias": "neutral",
+      "off_side_bias": "neutral",
+      "short_boundary_direction": "none",
+      "long_boundary_direction": "none"
+    },
+    "Eden Gardens": {
+      "venue_code": "eden_gardens",
+      "city": "Kolkata",
+      "north_boundary_m": 69,
+      "east_boundary_m": 71,
+      "south_boundary_m": 70,
+      "west_boundary_m": 72,
+      "square_leg_bias": "long",
+      "off_side_bias": "short",
+      "short_boundary_direction": "off_side",
+      "long_boundary_direction": "square_leg"
+    },
+    "Wankhede Stadium": {
+      "venue_code": "wankhede",
+      "city": "Mumbai",
+      "north_boundary_m": 71,
+      "east_boundary_m": 73,
+      "south_boundary_m": 72,
+      "west_boundary_m": 74,
+      "square_leg_bias": "neutral",
+      "off_side_bias": "neutral",
+      "short_boundary_direction": "none",
+      "long_boundary_direction": "none"
+    },
+    "MA Chidambaram Stadium": {
+      "venue_code": "chepauk",
+      "city": "Chennai",
+      "north_boundary_m": 70,
+      "east_boundary_m": 76,
+      "south_boundary_m": 71,
+      "west_boundary_m": 75,
+      "square_leg_bias": "short",
+      "off_side_bias": "long",
+      "short_boundary_direction": "square_leg",
+      "long_boundary_direction": "off_side"
+    },
+    "Arun Jaitley Stadium, Delhi": {
+      "venue_code": "feroz_shah_kotla",
+      "city": "Delhi",
+      "north_boundary_m": 72,
+      "east_boundary_m": 75,
+      "south_boundary_m": 73,
+      "west_boundary_m": 74,
+      "square_leg_bias": "neutral",
+      "off_side_bias": "neutral",
+      "short_boundary_direction": "none",
+      "long_boundary_direction": "none"
+    },
+    "PCA Stadium": {
+      "venue_code": "pca_stadium",
+      "city": "Dharamshala",
+      "north_boundary_m": 66,
+      "east_boundary_m": 72,
+      "south_boundary_m": 68,
+      "west_boundary_m": 71,
+      "square_leg_bias": "long",
+      "off_side_bias": "short",
+      "short_boundary_direction": "off_side",
+      "long_boundary_direction": "square_leg"
+    },
+    "Narendra Modi Stadium": {
+      "venue_code": "motera",
+      "city": "Ahmedabad",
+      "north_boundary_m": 75,
+      "east_boundary_m": 77,
+      "south_boundary_m": 76,
+      "west_boundary_m": 78,
+      "square_leg_bias": "short",
+      "off_side_bias": "long",
+      "short_boundary_direction": "square_leg",
+      "long_boundary_direction": "off_side"
+    },
+    "Punjab Cricket Association Stadium": {
+      "venue_code": "pca_mohali",
+      "city": "Mohali",
+      "north_boundary_m": 71,
+      "east_boundary_m": 74,
+      "south_boundary_m": 72,
+      "west_boundary_m": 75,
+      "square_leg_bias": "neutral",
+      "off_side_bias": "neutral",
+      "short_boundary_direction": "none",
+      "long_boundary_direction": "none"
+    },
+    "Rajiv Gandhi International Cricket Stadium": {
+      "venue_code": "rajiv_gandhi",
+      "city": "Hyderabad",
+      "north_boundary_m": 69,
+      "east_boundary_m": 72,
+      "south_boundary_m": 70,
+      "west_boundary_m": 73,
+      "square_leg_bias": "long",
+      "off_side_bias": "short",
+      "short_boundary_direction": "off_side",
+      "long_boundary_direction": "square_leg"
+    }
+  },
+  "notes": {
+    "boundary_interpretation": "Distances in meters from middle stump (approximations based on IPL 2024–2025 stadium maps)",
+    "bias_explanation": "square_leg_bias='long' means square-leg boundary is longer than off-side, advantage to RHB hitting in that direction",
+    "shot_direction_multiplier": "Use to compute boundary_probability_multiplier = (boundary_dist_this_direction) / (avg_boundary_dist)",
+    "dew_effect_interaction": "Longer boundaries become harder to clear under dew. Boundary asymmetry multiplier should INCREASE boundary prob on short side, DECREASE on long side under dew (Week 2 enhancement)"
+  }
+}

@@ -1,0 +1,118 @@
+{
+  "_comment": "ESPNcricinfo ground IDs for all IPL 2026 venues. Used for venue-specific player stat queries via Playwright scraper.",
+  "_usage": "https://www.espncricinfo.com/records/ground/{ground_id}",
+  "venues": {
+    "Wankhede Stadium, Mumbai": {
+      "ground_id": 6,
+      "team": "MI",
+      "city": "Mumbai",
+      "state": "Maharashtra",
+      "capacity": 33108,
+      "espncricinfo_url": "https://www.espncricinfo.com/ground/wankhede-stadium-6"
+    },
+    "Eden Gardens, Kolkata": {
+      "ground_id": 2,
+      "team": "KKR",
+      "city": "Kolkata",
+      "state": "West Bengal",
+      "capacity": 66349,
+      "espncricinfo_url": "https://www.espncricinfo.com/ground/eden-gardens-2"
+    },
+    "M. Chinnaswamy Stadium, Bengaluru": {
+      "ground_id": 3,
+      "team": "RCB",
+      "city": "Bengaluru",
+      "state": "Karnataka",
+      "capacity": 40000,
+      "espncricinfo_url": "https://www.espncricinfo.com/ground/m-chinnaswamy-stadium-3"
+    },
+    "MA Chidambaram Stadium, Chennai": {
+      "ground_id": 7,
+      "team": "CSK",
+      "city": "Chennai",
+      "state": "Tamil Nadu",
+      "capacity": 50000,
+      "espncricinfo_url": "https://www.espncricinfo.com/ground/ma-chidambaram-stadium-chepauk-7"
+    },
+    "Arun Jaitley Stadium, Delhi": {
+      "ground_id": 8,
+      "team": "DC",
+      "city": "Delhi",
+      "state": "Delhi",
+      "capacity": 41842,
+      "espncricinfo_url": "https://www.espncricinfo.com/ground/arun-jaitley-stadium-8"
+    },
+    "Rajiv Gandhi International Stadium, Hyderabad": {
+      "ground_id": 10,
+      "team": "SRH",
+      "city": "Hyderabad",
+      "state": "Telangana",
+      "capacity": 55000,
+      "espncricinfo_url": "https://www.espncricinfo.com/ground/rajiv-gandhi-international-cricket-stadium-10"
+    },
+    "Sawai Mansingh Stadium, Jaipur": {
+      "ground_id": 9,
+      "team": "RR",
+      "city": "Jaipur",
+      "state": "Rajasthan",
+      "capacity": 30000,
+      "espncricinfo_url": "https://www.espncricinfo.com/ground/sawai-mansingh-stadium-9"
+    },
+    "Punjab Cricket Association Stadium, Mohali": {
+      "ground_id": 4,
+      "team": "PBKS",
+      "city": "Mohali",
+      "state": "Punjab",
+      "capacity": 26000,
+      "espncricinfo_url": "https://www.espncricinfo.com/ground/punjab-cricket-association-is-bindra-stadium-4"
+    },
+    "Maharashtra Cricket Association Stadium, Pune": {
+      "ground_id": 11,
+      "team": null,
+      "city": "Pune",
+      "state": "Maharashtra",
+      "capacity": 37000,
+      "espncricinfo_url": "https://www.espncricinfo.com/ground/mca-stadium-11"
+    },
+    "JSCA International Stadium, Ranchi": {
+      "ground_id": 21,
+      "team": null,
+      "city": "Ranchi",
+      "state": "Jharkhand",
+      "capacity": 40000,
+      "espncricinfo_url": "https://www.espncricinfo.com/ground/jsca-international-stadium-complex-21"
+    },
+    "Barsapara Cricket Stadium, Guwahati": {
+      "ground_id": 19,
+      "team": null,
+      "city": "Guwahati",
+      "state": "Assam",
+      "capacity": 40000,
+      "espncricinfo_url": "https://www.espncricinfo.com/ground/barsapara-cricket-stadium-19"
+    },
+    "Dr. YS Rajasekhara Reddy ACA-VDCA Cricket Stadium, Visakhapatnam": {
+      "ground_id": 21,
+      "team": null,
+      "city": "Visakhapatnam",
+      "state": "Andhra Pradesh",
+      "capacity": 27000,
+      "espncricinfo_url": "https://www.espncricinfo.com/ground/dr-ys-rajasekhara-reddy-aca-vdca-cricket-stadium-21"
+    },
+    "Narendra Modi Stadium, Ahmedabad": {
+      "ground_id": 23,
+      "team": "GT",
+      "city": "Ahmedabad",
+      "state": "Gujarat",
+      "capacity": 132000,
+      "espncricinfo_url": "https://www.espncricinfo.com/ground/narendra-modi-stadium-23"
+    },
+    "Ekana Cricket Stadium, Lucknow": {
+      "ground_id": 28,
+      "team": "LSG",
+      "city": "Lucknow",
+      "state": "Uttar Pradesh",
+      "capacity": 50000,
+      "espncricinfo_url": "https://www.espncricinfo.com/ground/bharat-ratna-shri-atal-bihari-vajpayee-ekana-cricket-stadium-28"
+    }
+  }
+}

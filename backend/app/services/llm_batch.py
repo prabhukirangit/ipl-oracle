@@ -21,6 +21,7 @@ from ..schemas.llm_outputs import (
     OVER_BOWLING_PLAN_SCHEMA,
     OVER_BATTING_PLAN_SCHEMA,
 )
+from .json_repair import parse_llm_json
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,7 @@ async def batch_bowling_plan(
             max_tokens=1024,
         )
         if response:
-            parsed = json.loads(response)
+            parsed = parse_llm_json(response)
             plan = OverBowlingPlan(**parsed)
             return [d.model_dump() for d in plan.deliveries[:remaining_balls]]
     except Exception as exc:
@@ -114,7 +115,7 @@ async def batch_batting_plan(
             max_tokens=1024,
         )
         if response:
-            parsed = json.loads(response)
+            parsed = parse_llm_json(response)
             plan = OverBattingPlan(**parsed)
             return [r.model_dump() for r in plan.responses[:remaining_balls]]
     except Exception as exc:
@@ -157,7 +158,7 @@ async def batch_batting_plan_independent(
             max_tokens=1024,
         )
         if response:
-            parsed = json.loads(response)
+            parsed = parse_llm_json(response)
             plan = OverBattingPlan(**parsed)
             return [r.model_dump() for r in plan.responses[:remaining_balls]]
     except Exception as exc:

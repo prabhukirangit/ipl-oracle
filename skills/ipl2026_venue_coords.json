@@ -1,0 +1,118 @@
+{
+  "_comment": "GPS coordinates for IPL 2026 venues. Used for OpenWeatherMap API weather queries.",
+  "_usage": "GET https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lng}&appid={key}",
+  "venues": {
+    "Wankhede Stadium, Mumbai": {
+      "lat": 18.9388,
+      "lng": 72.8258,
+      "team": "MI",
+      "city": "Mumbai",
+      "timezone": "Asia/Kolkata",
+      "elevation_m": 14
+    },
+    "Eden Gardens, Kolkata": {
+      "lat": 22.5645,
+      "lng": 88.3433,
+      "team": "KKR",
+      "city": "Kolkata",
+      "timezone": "Asia/Kolkata",
+      "elevation_m": 9
+    },
+    "M. Chinnaswamy Stadium, Bengaluru": {
+      "lat": 12.9794,
+      "lng": 77.5995,
+      "team": "RCB",
+      "city": "Bengaluru",
+      "timezone": "Asia/Kolkata",
+      "elevation_m": 920
+    },
+    "MA Chidambaram Stadium, Chennai": {
+      "lat": 13.0602,
+      "lng": 80.2791,
+      "team": "CSK",
+      "city": "Chennai",
+      "timezone": "Asia/Kolkata",
+      "elevation_m": 6
+    },
+    "Arun Jaitley Stadium, Delhi": {
+      "lat": 28.6369,
+      "lng": 77.2220,
+      "team": "DC",
+      "city": "Delhi",
+      "timezone": "Asia/Kolkata",
+      "elevation_m": 213
+    },
+    "Rajiv Gandhi International Stadium, Hyderabad": {
+      "lat": 17.4057,
+      "lng": 78.5447,
+      "team": "SRH",
+      "city": "Hyderabad",
+      "timezone": "Asia/Kolkata",
+      "elevation_m": 536
+    },
+    "Sawai Mansingh Stadium, Jaipur": {
+      "lat": 26.8972,
+      "lng": 75.8059,
+      "team": "RR",
+      "city": "Jaipur",
+      "timezone": "Asia/Kolkata",
+      "elevation_m": 431
+    },
+    "Punjab Cricket Association Stadium, Mohali": {
+      "lat": 30.7002,
+      "lng": 76.7170,
+      "team": "PBKS",
+      "city": "Mohali",
+      "timezone": "Asia/Kolkata",
+      "elevation_m": 310
+    },
+    "Maharashtra Cricket Association Stadium, Pune": {
+      "lat": 18.6488,
+      "lng": 73.7273,
+      "team": null,
+      "city": "Pune",
+      "timezone": "Asia/Kolkata",
+      "elevation_m": 559
+    },
+    "JSCA International Stadium, Ranchi": {
+      "lat": 23.3413,
+      "lng": 85.3096,
+      "team": null,
+      "city": "Ranchi",
+      "timezone": "Asia/Kolkata",
+      "elevation_m": 651
+    },
+    "Barsapara Cricket Stadium, Guwahati": {
+      "lat": 26.1022,
+      "lng": 91.5853,
+      "team": null,
+      "city": "Guwahati",
+      "timezone": "Asia/Kolkata",
+      "elevation_m": 55
+    },
+    "Dr. YS Rajasekhara Reddy ACA-VDCA Cricket Stadium, Visakhapatnam": {
+      "lat": 17.7320,
+      "lng": 83.2300,
+      "team": null,
+      "city": "Visakhapatnam",
+      "timezone": "Asia/Kolkata",
+      "elevation_m": 45
+    },
+    "Narendra Modi Stadium, Ahmedabad": {
+      "lat": 23.0921,
+      "lng": 72.5956,
+      "team": "GT",
+      "city": "Ahmedabad",
+      "timezone": "Asia/Kolkata",
+      "elevation_m": 53
+    },
+    "Ekana Cricket Stadium, Lucknow": {
+      "lat": 26.8467,
+      "lng": 80.9462,
+      "team": "LSG",
+      "city": "Lucknow",
+      "timezone": "Asia/Kolkata",
+      "elevation_m": 123
+    }
+  }
+}

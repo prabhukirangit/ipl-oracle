@@ -18,6 +18,7 @@ Core game factors integrated per ball:
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import random
 import uuid
@@ -180,6 +181,7 @@ class MatchConfig:
     max_wickets: int = 10
     sim_count: int = 1  # Week 1: always 1
     simulation_mode: str = "hybrid"  # "persona", "hybrid", or "probabilistic"
+    persona_llm_trigger: str = "per_over"  # "per_over", "per_ball", "per_wicket" (persona mode only)
 
 
 @dataclass
@@ -628,6 +630,11 @@ class MatchEngine:
         sim_mode = self._config.simulation_mode
         use_over_batching = sim_mode in ("persona", "hybrid")
 
+        # Persona trigger granularity (only matters for persona mode)
+        persona_trigger = getattr(self._config, "persona_llm_trigger", "per_over")
+        if not persona_trigger:
+            persona_trigger = "per_over"
+
         for over in range(self._config.max_overs):
             # Choose bowler for this over (can't bowl two consecutive overs)
             available_bowlers = [
@@ -669,12 +676,16 @@ class MatchEngine:
             plan_ball_idx = 0  # tracks which plan entry to use
 
             if use_over_batching and sim_mode == "persona":
-                # Persona: always batch plan at start of over
-                bowling_plan, batting_plan = await self._get_over_plans(
-                    current_bowler, current_batsman, over, score, wickets,
-                    target, innings_number, batting_team, bowling_team,
-                    home_team, consecutive_dots,
-                )
+                # Persona: batch plan based on trigger granularity
+                # per_over  → batch every over (default)
+                # per_ball  → no batch, per-ball LLM calls handled below
+                # per_wicket → batch only on first over (over 0); wicket re-plans handled below
+                if persona_trigger == "per_over" or (persona_trigger == "per_wicket" and over == 0):
+                    bowling_plan, batting_plan = await self._get_over_plans(
+                        current_bowler, current_batsman, over, score, wickets,
+                        target, innings_number, batting_team, bowling_team,
+                        home_team, consecutive_dots,
+                    )
             elif use_over_batching and sim_mode == "hybrid":
                 # Hybrid: batch plan when high-leverage over is expected
                 est_pressure = compute_pressure_index(
@@ -699,12 +710,13 @@ class MatchEngine:
                         home_team, consecutive_dots,
                     )
 
+            # Cache pitch + weather per over (they don't change ball-to-ball)
+            pitch_condition = self._pitch_agent.get_condition(over, innings_number)
+            weather_condition = self._weather_agent.get_conditions_at_over(over, innings_number)
+
             # Simulate 6 balls in this over
             legal_balls = 0
             while legal_balls < 6:
-                # Compute match situation
-                pitch_condition = self._pitch_agent.get_condition(over, innings_number)
-                weather_condition = self._weather_agent.get_conditions_at_over(over, innings_number)
 
                 # Compute fatigue
                 batsman_fatigue = min(0.8, batsman_balls_faced.get(current_batsman.name, 0) / 120.0)
@@ -868,16 +880,27 @@ class MatchEngine:
                         and legal_balls <= 1
                     )
 
-                    use_llm_this_ball = (
-                        sim_mode == "persona"
-                        or (sim_mode == "hybrid" and (
+                    if sim_mode == "persona":
+                        if persona_trigger == "per_ball":
+                            # Per-ball: always use LLM (no batch, individual calls)
+                            use_llm_this_ball = True
+                        elif persona_trigger == "per_wicket":
+                            # Per-wicket: only use LLM if we have a batch plan from
+                            # a wicket re-plan or first over; otherwise probabilistic
+                            use_llm_this_ball = bool(bowling_plan and batting_plan)
+                        else:
+                            # Per-over (default): use batch plan or per-ball fallback
+                            use_llm_this_ball = True
+                    elif sim_mode == "hybrid":
+                        use_llm_this_ball = (
                             pressure >= LLM_PRESSURE_THRESHOLD
                             or is_death_over
                             or is_wicket_cluster
                             or is_close_chase
                             or is_post_wicket_ball
-                        ))
-                    )
+                        )
+                    else:
+                        use_llm_this_ball = False
 
                     if use_llm_this_ball:
                         try:
@@ -886,43 +909,78 @@ class MatchEngine:
                                 # Use pre-planned decisions from batch
                                 bowling_decision = bowling_plan[plan_ball_idx]
                                 batting_decision = batting_plan[plan_ball_idx]
-                                # Resolve outcome from intent matchup
-                                outcome = current_batsman.resolve_persona_outcome(
-                                    ball_ctx, bowling_decision, batting_decision, rng=self._rng,
+                                # Resolve outcome from intent matchup — only
+                                # here do both plans meet
+                                from .outcome_resolver import resolve_persona_outcome as _resolve
+                                outcome = _resolve(
+                                    batting_decision=batting_decision,
+                                    bowling_decision=bowling_decision,
+                                    ball_context=current_batsman._ball_context_to_dict(ball_ctx),
+                                    rng=self._rng,
                                 )
                             else:
                                 # Fallback: per-ball LLM calls (batch failed or exhausted)
+                                # Pre-render BOTH contexts upfront (they're independent)
+                                ball_ctx_dict = current_batsman._ball_context_to_dict(ball_ctx)
+                                stadium_dims = self._stadium_agent.get_dimensions()
+                                bowl_comm = self._comm_bus.get_recent_for_agent(current_bowler.agent_id, bowling_team) if self._comm_bus else None
+                                bat_comm = self._comm_bus.get_recent_for_agent(current_batsman.agent_id, batting_team) if self._comm_bus else None
                                 bowl_narrative = self._context_renderer.render_bowling_context(
-                                    ball_context=current_batsman._ball_context_to_dict(ball_ctx),
+                                    ball_context=ball_ctx_dict,
                                     pitch_condition=pitch_condition,
                                     weather_condition=weather_condition,
                                     crowd_state={"energy": crowd_energy},
-                                    stadium_info=self._stadium_agent.get_dimensions(),
-                                    comm_messages=self._comm_bus.get_recent_for_agent(current_bowler.agent_id, bowling_team) if self._comm_bus else None,
+                                    stadium_info=stadium_dims,
+                                    comm_messages=bowl_comm,
                                     recent_memory=current_bowler.recall_memory(limit=6),
                                     batsman_profile=current_batsman.get_profile(),
                                 )
-                                bowling_decision = await current_bowler.bowl_with_persona(
-                                    ball_ctx, current_batsman.get_profile(), bowl_narrative,
-                                    comm_messages=self._comm_bus.get_recent_for_agent(current_bowler.agent_id, bowling_team) if self._comm_bus else None,
-                                    rng=self._rng,
-                                )
                                 bat_narrative = self._context_renderer.render_batting_context(
-                                    ball_context=current_batsman._ball_context_to_dict(ball_ctx),
+                                    ball_context=ball_ctx_dict,
                                     pitch_condition=pitch_condition,
                                     weather_condition=weather_condition,
                                     crowd_state={"energy": crowd_energy},
-                                    stadium_info=self._stadium_agent.get_dimensions(),
-                                    comm_messages=self._comm_bus.get_recent_for_agent(current_batsman.agent_id, batting_team) if self._comm_bus else None,
+                                    stadium_info=stadium_dims,
+                                    comm_messages=bat_comm,
                                     recent_memory=current_batsman.recall_memory(limit=6),
                                     bowler_profile=current_bowler.get_profile(),
                                     batsman_profile=current_batsman.get_profile(),
                                 )
-                                outcome = await current_batsman.bat_with_persona(
-                                    ball_ctx, bowling_decision, bat_narrative,
-                                    comm_messages=self._comm_bus.get_recent_for_agent(current_batsman.agent_id, batting_team) if self._comm_bus else None,
+                                # Fire bowler and batsman concurrently — neither
+                                # sees the other's plan (real cricket: batsman
+                                # commits to intent before seeing the delivery).
+                                bowling_task = current_bowler.bowl_with_persona(
+                                    ball_ctx, current_batsman.get_profile(), bowl_narrative,
+                                    comm_messages=bowl_comm, rng=self._rng,
+                                )
+                                batting_task = current_batsman.get_batting_decision(
+                                    ball_ctx, bat_narrative,
+                                    comm_messages=bat_comm,
+                                )
+                                bowling_decision, batting_decision = await asyncio.gather(
+                                    bowling_task, batting_task,
+                                )
+                                # Resolve outcome through matchup matrix —
+                                # only HERE do both plans meet (slog vs yorker = wicket, etc.)
+                                from .outcome_resolver import resolve_persona_outcome
+                                outcome = resolve_persona_outcome(
+                                    batting_decision=batting_decision,
+                                    bowling_decision=bowling_decision,
+                                    ball_context=current_batsman._ball_context_to_dict(ball_ctx),
                                     rng=self._rng,
                                 )
+                                # Record batting memory
+                                current_batsman.add_memory({
+                                    "type": "ball_faced",
+                                    "over": ball_ctx.over,
+                                    "ball": ball_ctx.ball,
+                                    "outcome": "wicket" if outcome.is_wicket else f"{outcome.runs}_runs",
+                                    "runs": outcome.runs,
+                                    "is_wicket": outcome.is_wicket,
+                                    "intent": batting_decision.get("intent", "unknown"),
+                                    "shot": batting_decision.get("shot_selection", "unknown"),
+                                    "pressure_index": ball_ctx.pressure_index,
+                                })
                         except Exception:
                             # Fall back to probabilistic on any persona failure
                             outcome = current_batsman.bat(ball_ctx, rng=self._rng)
@@ -1037,8 +1095,15 @@ class MatchEngine:
 
                         # Re-plan remaining balls with new batsman (over-level batching)
                         # In hybrid mode, a wicket fall is always high-leverage — re-plan
+                        # In persona per_ball mode, skip batch (per-ball LLM handles it)
                         remaining_in_over = 6 - legal_balls
-                        if use_over_batching and sim_mode in ("persona", "hybrid") and remaining_in_over > 0:
+                        should_replan = (
+                            use_over_batching
+                            and sim_mode in ("persona", "hybrid")
+                            and remaining_in_over > 0
+                            and not (sim_mode == "persona" and persona_trigger == "per_ball")
+                        )
+                        if should_replan:
                             bowling_plan, batting_plan = await self._get_over_plans(
                                 current_bowler, current_batsman, over, score, wickets,
                                 target, innings_number, batting_team, bowling_team,

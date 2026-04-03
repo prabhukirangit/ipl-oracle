@@ -9,6 +9,8 @@ In PROBABILISTIC mode: No messages generated.
 
 from __future__ import annotations
 
+from app.services.json_repair import parse_llm_json
+
 import json
 import logging
 import random
@@ -101,7 +103,7 @@ class TeamHuddleSkill(BaseSkill):
         try:
             response = await agent.think(prompt=prompt, context=situation, require_llm=True)
             if response:
-                parsed = json.loads(response)
+                parsed = parse_llm_json(response)
                 huddle = TeamHuddle(**parsed)
                 return huddle.model_dump()
         except Exception as exc:

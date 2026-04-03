@@ -87,7 +87,7 @@
         <div class="form-group">
           <label class="form-label" for="sim-count">
             Simulations
-            <span class="form-badge">1–500 parallel runs</span>
+            <span class="form-badge">1–{{ simCountMax.toLocaleString() }} parallel runs</span>
           </label>
           <input
             id="sim-count"
@@ -171,7 +171,7 @@ const emit = defineEmits(['submit'])
 
 const formData = reactive({
   pitchType: 'balanced',
-  simCount: 100,
+  simCount: 10,
   simulationMode: 'hybrid',
   tossWinner: '',
   tossDecision: '',
@@ -188,7 +188,7 @@ const modeBadge = computed(() => {
 
 const modeHint = computed(() => {
   const hints = {
-    persona: 'Each player is an LLM persona making decisions in character. Team communication enabled. Best with 1-10 sims.',
+    persona: 'Each player is an LLM persona making decisions in character. Team communication enabled. Default 10, max 100 sims.',
     hybrid: 'LLM fires at high-leverage moments (last overs, wickets under pressure). Good balance of speed and intelligence.',
     probabilistic: 'Pure probability engine. No LLM calls. Fastest mode — ideal for large sim counts.',
   }
@@ -196,18 +196,18 @@ const modeHint = computed(() => {
 })
 
 const simCountMax = computed(() => {
-  const limits = { persona: 10, hybrid: 100, probabilistic: 500 }
-  return limits[formData.simulationMode] || 500
+  const limits = { persona: 100, hybrid: 100, probabilistic: 50000 }
+  return limits[formData.simulationMode] || 100
 })
 
 const simCountHint = computed(() => {
   if (formData.simulationMode === 'persona') {
-    return 'Persona mode: max 10 sims. Each sim has full LLM impersonation per ball.'
+    return 'Persona mode: max 100 sims. Each sim has full LLM impersonation per ball.'
   }
   if (formData.simulationMode === 'probabilistic') {
-    return 'Fast mode: up to 500 sims. Pure probability — no LLM cost.'
+    return 'Fast mode: up to 50,000 sims. Pure probability — no LLM cost. Default: 500.'
   }
-  return 'More simulations = higher confidence intervals. 50-100 recommended.'
+  return 'More simulations = higher confidence intervals. Default: 10, max 100.'
 })
 
 function handleSubmit() {

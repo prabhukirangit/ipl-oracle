@@ -11,15 +11,17 @@ Supported providers (set LLM_PROVIDER in .env):
 Auto-detection: if LLM_PROVIDER is not set, the first key found in env is used.
 Priority: anthropic → openai → gemini → local.
 
-Hybrid mode trigger: pressure_index >= LLM_PRESSURE_THRESHOLD (default 0.85).
+Hybrid mode trigger: pressure_index >= LLM_PRESSURE_THRESHOLD (default 0.65).
 Falls back to None (probabilistic path) on any error or when disabled.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
+import time
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -32,6 +34,10 @@ DISCLAIMER = (
 )
 
 LLM_PRESSURE_THRESHOLD = float(os.getenv("LLM_PRESSURE_THRESHOLD", "0.65"))
+
+# Rate limiting: max concurrent LLM calls and minimum delay between calls
+LLM_MAX_CONCURRENT = int(os.getenv("LLM_MAX_CONCURRENT", "5"))
+LLM_MIN_DELAY_MS = int(os.getenv("LLM_MIN_DELAY_MS", "200"))
 
 # Default model IDs per provider (overridden by ANTHROPIC_MODEL, OPENAI_MODEL, etc.)
 _DEFAULT_MODELS: dict[str, str] = {
@@ -153,6 +159,12 @@ class LLMClient:
         self._enabled = False
         self._backend: _AnthropicBackend | _OpenAICompatBackend | None = None
 
+        # Rate limiting state
+        self._semaphore = asyncio.Semaphore(LLM_MAX_CONCURRENT)
+        self._min_delay = LLM_MIN_DELAY_MS / 1000.0  # convert to seconds
+        self._last_call_time: float = 0.0  # monotonic clock
+        self._call_lock = asyncio.Lock()
+
         if not self._provider:
             logger.info(
                 "LLMClient: no provider configured — hybrid mode disabled. "
@@ -167,10 +179,12 @@ class LLMClient:
             self._backend = _build_backend(self._provider, self._model)
             self._enabled = True
             logger.info(
-                "LLMClient: enabled — provider=%s model=%s threshold=%.2f",
+                "LLMClient: enabled — provider=%s model=%s threshold=%.2f max_concurrent=%d min_delay=%dms",
                 self._provider,
                 self._model,
                 LLM_PRESSURE_THRESHOLD,
+                LLM_MAX_CONCURRENT,
+                LLM_MIN_DELAY_MS,
             )
         except ImportError as exc:
             logger.warning(
@@ -210,15 +224,39 @@ class LLMClient:
                 f"Match context:\n{json.dumps(context, indent=2, default=str)}"
             )
 
-        try:
-            return await self._backend.complete(system_prompt, full_user_prompt, max_tokens)
-        except Exception as exc:
-            print(f"[LLM ERROR] provider={self._provider} model={self._model}: {exc}")
-            logger.warning(
-                "LLMClient.think failed (provider=%s): %s — falling back to probabilistic",
-                self._provider,
-                exc,
-            )
+        # Rate limiting: cap concurrent calls and enforce minimum delay
+        async with self._semaphore:
+            async with self._call_lock:
+                now = time.monotonic()
+                elapsed = now - self._last_call_time
+                if elapsed < self._min_delay:
+                    await asyncio.sleep(self._min_delay - elapsed)
+                self._last_call_time = time.monotonic()
+
+            max_retries = 3
+            base_delay = 2.0  # seconds
+
+            for attempt in range(max_retries + 1):
+                try:
+                    return await self._backend.complete(system_prompt, full_user_prompt, max_tokens)
+                except Exception as exc:
+                    exc_str = str(exc)
+                    is_rate_limit = "429" in exc_str or "rate" in exc_str.lower() or "quota" in exc_str.lower()
+
+                    if is_rate_limit and attempt < max_retries:
+                        delay = base_delay * (2 ** attempt)  # 2s, 4s, 8s
+                        logger.warning(
+                            "LLMClient.think rate-limited (attempt %d/%d, provider=%s): %s — retrying in %.1fs",
+                            attempt + 1, max_retries, self._provider, exc, delay,
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+
+                    logger.warning(
+                        "LLMClient.think failed (provider=%s): %s — falling back to probabilistic",
+                        self._provider, exc,
+                    )
+                    return None
             return None
 
     def is_enabled(self) -> bool:

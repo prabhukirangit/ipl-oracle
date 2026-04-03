@@ -227,7 +227,25 @@ def resolve_persona_outcome(
     elif exp_years <= 2:
         weights["wicket"] += 0.008
 
-    # 7. Clamp and normalize
+    # 7. Apply field placement interception — matches probabilistic path logic
+    #    CaptainAgent sets fielders; boundaries hit toward occupied positions
+    #    get intercepted (caught/dot/single instead of 4).
+    field = ball_context.get("field_state")
+    if field and isinstance(field, dict):
+        # Count deep fielders — more fielders = harder to find gaps
+        deep_count = sum(1 for k in [
+            "deep_third_man", "deep_fine_leg", "deep_point", "deep_cover",
+            "long_off", "long_on", "deep_midwicket", "deep_square_leg",
+        ] if field.get(k))
+        # Each deep fielder reduces boundary probability slightly
+        if deep_count >= 4:
+            boundary_suppress = 0.015 * deep_count  # 0.06–0.12 penalty
+            weights["boundary"] -= boundary_suppress
+            weights["dot"] += boundary_suppress * 0.4
+            weights["single"] += boundary_suppress * 0.4
+            weights["wicket"] += boundary_suppress * 0.2  # caught in the deep
+
+    # 8. Clamp and normalize
     for key in weights:
         weights[key] = max(0.001, weights[key])
 
@@ -236,10 +254,10 @@ def resolve_persona_outcome(
     total = sum(probs)
     normalized = [p / total for p in probs]
 
-    # 8. Sample outcome
+    # 9. Sample outcome
     outcome_key = rng.choices(outcomes, weights=normalized, k=1)[0]
 
-    # 9. Resolve to BallOutcome
+    # 10. Resolve to BallOutcome
     runs = 0
     is_wicket = False
     is_boundary = False
@@ -264,9 +282,46 @@ def resolve_persona_outcome(
         is_wicket = True
         dismissal_type = rng.choice(["caught", "bowled", "lbw", "stumped", "run_out"])
 
-    # Build narrative from decisions
+    # 11. Post-sample field interception — specific shot-to-fielder matchups
+    #     (mirrors PlayerAgent.bat() interception logic)
     shot = batting_decision.get("shot_selection", "shot")
     target = batting_decision.get("target_zone", "")
+
+    if field and isinstance(field, dict) and outcome_key in ("boundary", "three", "two"):
+        intercepted = False
+        if shot in ("drive", "lofted_drive", "cover_drive", "straight_drive") and (field.get("long_off") or field.get("deep_cover")):
+            intercepted = True
+        elif shot in ("pull", "slog", "slog_sweep", "hook") and field.get("deep_square_leg"):
+            intercepted = True
+        elif shot in ("cut", "upper_cut", "late_cut") and field.get("deep_point"):
+            intercepted = True
+        elif shot in ("flick", "glance", "paddle") and field.get("deep_fine_leg"):
+            intercepted = True
+        elif shot in ("sweep", "reverse_sweep") and (field.get("deep_square_leg") or field.get("deep_fine_leg")):
+            intercepted = True
+
+        if intercepted:
+            roll = rng.random()
+            if roll < 0.2:
+                # Caught in the deep
+                outcome_key = "wicket"
+                is_wicket = True
+                is_boundary = False
+                runs = 0
+                dismissal_type = "caught"
+                shot = f"{shot} (caught in the deep)"
+            elif roll < 0.5:
+                # Fielder cuts it off — dot ball
+                outcome_key = "dot"
+                is_boundary = False
+                runs = 0
+                shot = f"{shot} (intercepted)"
+            else:
+                # Single — fielder's throw keeps it to one
+                outcome_key = "single"
+                is_boundary = False
+                runs = 1
+                shot = f"{shot} (cut off)"
 
     if is_wicket:
         notes = (

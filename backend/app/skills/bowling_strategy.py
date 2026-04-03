@@ -8,6 +8,8 @@ In PROBABILISTIC mode: Returns a heuristic decision (no LLM).
 
 from __future__ import annotations
 
+from app.services.json_repair import parse_llm_json
+
 import json
 import logging
 import random
@@ -102,7 +104,7 @@ class BowlingStrategySkill(BaseSkill):
             )
 
             if response:
-                parsed = json.loads(response)
+                parsed = parse_llm_json(response)
                 decision = BowlingDecision(**parsed)
                 agent.log_decision(
                     decision_type="persona_bowling",

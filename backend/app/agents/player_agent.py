@@ -974,6 +974,37 @@ class PlayerAgent(BaseAgent):
             # Fall back to probabilistic
             return self.bat(ball_context, rng=rng)
 
+    async def get_batting_decision(
+        self,
+        ball_context: BallContext,
+        narrative: str,
+        comm_messages: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Get the batsman's intent decision WITHOUT resolving the outcome.
+
+        Used in per-ball mode so the bowler and batsman can decide concurrently
+        (neither sees the other's plan). The match engine then feeds both
+        decisions into the OutcomeResolver.
+
+        Falls back to heuristic decision if LLM fails.
+        """
+        from ..skills.batting_decision import BattingDecisionSkill
+
+        skill = BattingDecisionSkill()
+        context = {
+            "ball_context": self._ball_context_to_dict(ball_context),
+            "narrative": narrative,
+            "bowling_decision": None,  # intentionally hidden
+            "persona": self.persona,
+            "comm_messages": comm_messages,
+        }
+
+        try:
+            return await skill.execute(self, context, "persona")
+        except Exception:
+            return skill._heuristic_decision(self, context)
+
     async def bowl_with_persona(
         self,
         ball_context: BallContext,
@@ -1049,6 +1080,7 @@ class PlayerAgent(BaseAgent):
             "boundary_asymmetry_factor": ctx.boundary_asymmetry_factor,
             "bowler_economy": ctx.bowler_economy,
             "bowler_bowling_avg": ctx.bowler_bowling_avg,
+            "field_state": ctx.field_state.to_dict() if ctx.field_state and hasattr(ctx.field_state, "to_dict") else None,
         }
 
     def __repr__(self) -> str:

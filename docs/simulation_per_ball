@@ -1,0 +1,327 @@
+ Summary: Per-Ball Outcome Resolution & ML Features Analysis
+
+       Based on my exploration of the IPL-Oracle codebase, here's a complete breakdown of the per-ball outcome resolution system and
+       available features for CatBoost training:
+
+       ---
+       1. BallContext Dataclass (Input Features Per Ball)
+
+       File: /c/Users/prabh/OneDrive/Desktop/gitpk/ipl-panda/ipl-oracle/backend/app/agents/player_agent.py (lines 28-67)
+
+       Core Game State (6 fields):
+       - over: int (0-19, indexed)
+       - ball: int (0-5, ball within over)
+       - batting_team_score: int (cumulative runs)
+       - wickets_fallen: int (batsman dismissals)
+       - target: int | None (chase target, None if first innings)
+       - balls_faced_this_innings: int (batter-specific context)
+
+       Match Environment (8 fields):
+       - pitch_condition: dict (from PitchAgent — batting_ease, pace_effectiveness, spin_effectiveness, bounce_consistency,
+       swing_available, turn_available)
+       - weather_condition: dict (from WeatherAgent — temperature_c, humidity_pct, wind_speed_kmh, cloud_cover_pct, dew_point_c,
+       swing_factor, dew_factor, is_raining)
+       - pressure_index: float (0-1, recomputed each ball)
+       - boundary_asymmetry_factor: float (stadium-specific multiplier for short/long boundaries)
+       - dew_factor: float (venue-specific moisture/ball condition effect)
+       - partnership_runs: int (runs in current partnership)
+       - batsman_fatigue: float (0-1)
+       - bowler_fatigue: float (0-1)
+
+       Player Context (7 fields):
+       - is_batsman_home: bool (home advantage for batsman)
+       - is_bowler_home: bool (home advantage for bowler)
+       - bowler_economy: float (career runs per over)
+       - bowler_bowling_avg: float (career average)
+       - bowler_death_spec: float (death bowling specialization 0-1)
+       - bowler_style: str (e.g., "pace", "off_break", "left_arm_spin")
+       - match_index: int (match sequencing for expectation tax)
+
+       Strategy & Game State (10 additional fields):
+       - is_post_timeout: bool (intent shift post strategic timeout)
+       - is_17th_over: bool (death leverage point)
+       - captain_defensive_tendency: float (0-1, field spread)
+       - batting_collapse_active: bool (2 wickets in 6 balls contagion)
+       - anchor_penalty_active: bool (partner batting slow → this batter forced to hit)
+       - franchise_clutch_factor: float (0.5 baseline; high for CSK/MI)
+       - fielding_conversion_probability: float (catch drop variance)
+       - lower_order_strike_independence: bool (bowlers batting freely)
+       - over_rate_pressure_active: bool (final 2 overs field restrictions)
+       - field_state: FieldState | None (on-field fielding positions)
+
+       ---
+       2. BallOutcome Dataclass (Target/Output)
+
+       File: /c/Users/prabh/OneDrive/Desktop/gitpk/ipl-panda/ipl-oracle/backend/app/agents/player_agent.py (lines 69-83)
+
+       Outcome Variables:
+       - runs: int (0, 1, 2, 3, 4, 6) — PRIMARY TARGET for regression
+       - is_wicket: bool
+       - is_boundary: bool (4 runs only)
+       - is_six: bool
+       - is_wide: bool
+       - is_no_ball: bool
+       - dismissal_type: str | None ('caught', 'bowled', 'lbw', 'stumped', 'run_out')
+       - shot_type: str (e.g., 'drive', 'pull', 'cut', 'defended')
+       - delivery_type: str (e.g., 'yorker', 'bouncer', 'googly', 'outswinger')
+       - pressure_index: float (pressure at moment of ball)
+       - confidence: float (0-1, model confidence in outcome)
+       - notes: str (narrative)
+
+       Possible Target Variables for ML:
+       1. runs (0-6) — Regression target; or multi-class (dot/single/two/three/boundary/six/wicket)
+       2. is_wicket (bool) — Wicket probability classification
+       3. runs + is_wicket (compound) — Run probability distribution + wicket risk
+       4. Match win outcome — Downstream target (aggregated from ball outcomes)
+
+       ---
+       3. Outcome Weight Modifiers (Probability Shaping)
+
+       File: /c/Users/prabh/OneDrive/Desktop/gitpk/ipl-panda/ipl-oracle/backend/app/simulation/outcome_resolver.py (lines 104-113)
+
+       Base Weights (neutral player, T20 average):
+       BASE_WEIGHTS = {
+           "dot": 0.34,      # 34% no runs
+           "single": 0.34,   # 34% one run
+           "two": 0.08,      # 8% two runs
+           "three": 0.015,   # 1.5% three runs
+           "boundary": 0.13, # 13% four runs
+           "six": 0.04,      # 4% six runs
+           "wicket": 0.055,  # 5.5% dismissal
+       }
+
+       Modifier Layers (7 in OutcomeResolver, 25+ in PlayerAgent.bat()):
+
+       OutcomeResolver (Persona Mode):
+
+       1. Batting Intent Modifiers (lines 32-49): attack/rotate/defend/slog
+       2. Delivery Type Modifiers (lines 52-81): yorker/bouncer/slower_ball/googly/etc.
+       3. Intent × Delivery Interactions (lines 84-101): e.g., slog vs yorker = +0.06 wicket
+       4. Confidence Differential (lines 120-128): batting_conf - bowling_conf
+       5. Risk Appetite (lines 131-138): high risk → more sixes AND wickets
+       6. Ball Context (lines 206-247):
+         - Pressure index (>0.7)
+         - Dew factor (<0.85 helps batting against spin)
+         - Boundary asymmetry (multiplicative)
+         - Experience years (veterans: -0.01 wicket; rookies: +0.008 wicket)
+         - Field placement (deep fielders suppress boundaries)
+
+       PlayerAgent.bat() (25+ Modifiers):
+
+       1. Aggression Index (lines 291-297): ±0.06 boundary, ±0.03 six
+       2. Strike Rate (lines 299-303): normalized around 140 IPL average
+       3. Venue Affinity (lines 305-308): ±0.04 boundary
+       4. Form Confidence + Expectation Tax (lines 310-321): auction hangover penalty
+       5. Home Advantage (lines 323-328): +0.025 boundary, -0.020 dot
+       6. Bowler Economy (lines 330-335): good bowler → +0.05 dot, -0.04 boundary
+       7. Bowler Bowling Average (lines 337-338): lower avg → +0.02 wicket
+       8. Pressure Index (lines 340-350): >0.5 → increased wickets/dots
+       9. Fatigue (lines 352-359): >0.3 → +wicket, -boundary
+       10. Experience Years (lines 361-377): 10+ → -0.015 wicket; ≤2 → +0.01 wicket
+       11. Age Decline (lines 373-377): 37+ → -0.03 boundary
+       12. Powerplay Specialization (lines 379-383): overs 0-5
+       13. Death Overs Specialization (lines 385-389): overs 16-19
+       14. Pitch Batting Ease (lines 391-396): ±0.04 boundary
+       15. Bowler Death Spec Fear (lines 398-404): known death specialists
+       16. Boundary Asymmetry (lines 406-409): multiplicative
+       17. Dew Factor (lines 411-416): against spin
+       18. Left-Arm Vulnerability (lines 418-427): RHB vs LHP incoming angle challenge
+       19. Post-Timeout Intent Shift (lines 431-437): +0.05 boundary, +0.04 six, +0.04 wicket
+       20. 17th Over Leverage (lines 439-444): +0.03 boundary
+       21. Batting Collapse Contagion (lines 446-451): +0.08 dot, +0.05 wicket
+       22. Anchor Penalty (lines 453-459): +0.06 boundary, +0.04 six, +0.06 wicket
+       23. Franchise Clutch Factor (lines 461-465): high for CSK/MI
+       24. Lower-Order Strike Independence (lines 467-473): +0.06 six, +0.08 wicket
+       25. Captain Defensive Tendency (lines 475-479): +single, -boundary
+       26. Opening 12-Ball Intent (lines 481-485): early aggression profile
+       27. Spinner Entry Timing (lines 487-495): powerplay spinners hit hard but risky
+       28. Over-Rate Pressure (lines 497-503): final 2 overs field restrictions
+
+       ---
+       4. Stadium Features (Venue Agent)
+
+       File: /c/Users/prabh/OneDrive/Desktop/gitpk/ipl-panda/ipl-oracle/backend/app/agents/stadium_agent.py
+
+       Per-Venue Static Data:
+       - Dimensions (m): straight_boundary, square_boundary, long_on, long_off
+       - Pitch Type: batting_friendly, batting_paradise, spin_friendly, pace_friendly, balanced
+       - Historical Scoring:
+         - avg_first_innings, avg_second_innings
+         - highest_score, lowest_defended
+         - typical_range (low, high)
+       - Chase Stats:
+         - chase_win_rate, bat_first_win_rate
+         - avg_winning_chase
+       - Powerplay Stats:
+         - avg_powerplay_score
+         - avg_powerplay_wickets
+       - Dew Factor (0-1): evening influence on batting
+       - Spin/Pace Friendly (bool)
+       - Boundary Asymmetry Factor (0.8-1.2): shot_direction × batsman_handedness adjustment
+
+       11 Venues Profiled: Wankhede, Eden Gardens, Chinnaswamy, Chepauk, Arun Jaitley, Rajiv Gandhi, Narendra Modi, Ekana, Sawai
+       Mansingh, PCA Mohali
+
+       ---
+       5. Pitch Features (Pitch Agent)
+
+       File: /c/Users/prabh/OneDrive/Desktop/gitpk/ipl-panda/ipl-oracle/backend/app/agents/pitch_agent.py
+
+       Per-Over Deterministic Evolution:
+
+       For each pitch type (batting_friendly, batting_paradise, spin_friendly, pace_friendly, balanced):
+
+       - batting_ease (0.2-0.95): how easy to bat (varies by over and innings)
+       - pace_effectiveness (0.2-0.95): fast bowler effectiveness
+       - spin_effectiveness (0.2-0.95): spinner effectiveness
+       - bounce_consistency (0.65-0.85): pitch variability
+       - swing_available (bool): overcast conditions
+       - turn_available (bool): spin_eff > 0.55
+
+       Over Phases:
+       - Early (0-5): pace-friendly, high bounce, some grass
+       - Middle (6-14): batting flattens, pitch becomes batsman-friendly
+       - Death (15-19): wear factor affects consistency, spinners may grip more
+
+       Second Innings Penalty: +0.08 additional wear → harder to bat
+
+       ---
+       6. Weather Features (Weather Agent)
+
+       File: /c/Users/prabh/OneDrive/Desktop/gitpk/ipl-panda/ipl-oracle/backend/app/agents/weather_agent.py
+
+       Per-Match Variables:
+       - temperature_c (20-35°C typical)
+       - humidity_pct (40-80%)
+       - wind_speed_kmh (0-25 km/h)
+       - wind_direction (SW, NE, calm)
+       - cloud_cover_pct (0-100%)
+       - dew_point_c (10-25°C)
+       - is_raining (bool)
+       - visibility_km (1-10 km)
+       - pressure_hpa (1005-1015 hPa)
+
+       Derived:
+       - swing_factor (0-1): 0.4 × (cloud_cover / 100) + 0.6 × max(0, (humidity - 40) / 60)
+       - dew_factor (0-1): evening matches in humid venues get heavy dew (helps batting)
+
+       ---
+       7. Field Placement Features (Captain Agent)
+
+       File: /c/Users/prabh/OneDrive/Desktop/gitpk/ipl-panda/ipl-oracle/backend/app/agents/captain_agent.py
+
+       FieldState (one per ball):
+       - slips: int (0-2)
+       - deep_third_man: bool
+       - deep_fine_leg: bool
+       - deep_point: bool
+       - deep_cover: bool
+       - long_off: bool
+       - long_on: bool
+       - deep_midwicket: bool
+       - deep_square_leg: bool
+       - sweepers: int (0-2)
+
+       Rules:
+       - Powerplay (0-5): Max 2 deep fielders
+       - Middle/Death (6-19): Max 5 deep fielders
+       - Field affected by bowler_style (pace vs spin) and pressure_index
+
+       ---
+       8. ML Feature Engineering Recommendations
+
+       Categorical Features:
+
+       - pitch_type (from venue)
+       - bowler_style (pace/spin variants)
+       - shot_type (12+ types)
+       - delivery_type (12+ types)
+       - venue_name (11 venues) or venue_key
+       - batsman_role (opener, middle-order, finisher, bowler)
+       - batsman_batting_style (RHB/LHB)
+       - Is phase (powerplay/middle/death) from over number
+
+       Numerical Features:
+
+       1. Game State: over, ball_in_over, balls_faced, partnership_runs, target_gap
+       2. Player Stats: batsman_SR, batsman_avg, bowler_economy, bowler_avg
+       3. Pitch Conditions: batting_ease, pace_eff, spin_eff, bounce_consistency
+       4. Weather: humidity, wind_speed, cloud_cover, swing_factor, dew_factor
+       5. Player Traits: aggression, pressure_resilience, form_confidence, experience_years, age
+       6. Pressure: pressure_index, wickets_fallen, runs_needed_per_ball
+       7. Venue: boundary_asymmetry, dew_factor, chase_win_rate
+       8. Fatigue: batsman_fatigue, bowler_fatigue
+       9. Field: deep_fielders_count, slips_count
+
+       Target Variables:
+
+       1. Regression: runs (0-6) with continuous weighting
+       2. Multi-class: outcome_key ∈ {dot, single, two, three, boundary, six, wicket}
+       3. Binary: is_wicket (True/False)
+       4. Hierarchical: runs (0-6), then given is_wicket, then dismissal_type
+
+       Interaction Features Worth Engineering:
+
+       - bowler_economy × pressure_index (pressure amplifies good bowlers)
+       - batsman_aggression × collapse_active (collapse suppresses natural aggression)
+       - pitch_batting_ease × bowler_death_spec (tight pitches penalize death specialists less)
+       - dew_factor × spin_effectiveness (dew reduces spin grip)
+       - partner_sr × this_batter_sr (mismatch triggers anchor penalty)
+       - age × experience_years (veterans age better)
+       - boundary_asymmetry × shot_direction (asymmetry applies to direction-specific shots)
+
+       ---
+       9. Data Collection Points for Training
+
+       High-confidence simulation data sources:
+       1. Run SimulationEngine.simulate_match() 100,000+ times with varied RNG seeds
+       2. Each ball produces: (BallContext, BallOutcome) tuple
+       3. Aggregate to per-ball CSV with all 60+ features + target
+
+       Example training row:
+       over, ball, batsman_sr, bowler_economy, pitch_batting_ease, pressure_index,
+       is_powerplay, is_17th_over, aggression_index, fatigue, boundary_asymmetry,
+       dew_factor, cloud_cover, humidity, temperature, venue_key, bowler_style,
+       is_post_timeout, batting_collapse_active, runs (TARGET)
+
+       ---
+       10. Probability Distributions Vs Deterministic Models
+
+       The current system uses probabilistic sampling from adjusted weights:
+       - OutcomeResolver: 7 modifier layers → normalized probabilities → sample outcome
+       - PlayerAgent.bat(): 25+ modifier layers → normalized → sample outcome
+
+       For CatBoost:
+       - Train on simulated outcomes to approximate the weight adjustments
+       - Predict P(runs=k) and P(wicket) directly
+       - Can then sample from CatBoost's predicted probabilities for stochastic simulation
+
+       This gives you:
+       - Explainability (feature importance ranking)
+       - Generalization beyond hard-coded rules
+       - Calibration via probability predictions
+       - Flexibility to extend to unseen player/venue combos
+
+       ---
+       Summary Table
+
+
+       ┌─────────────────┬─────────┬──────────────────────────────────────────────┬───────────────────────────┐
+       │    Component    │  Type   │                 Key Features                 │          Purpose          │
+       ├─────────────────┼─────────┼──────────────────────────────────────────────┼───────────────────────────┤
+       │ BallContext     │ Input   │ 31 fields (game state + player + strategy)   │ Per-ball decision context │
+       ├─────────────────┼─────────┼──────────────────────────────────────────────┼───────────────────────────┤
+       │ BallOutcome     │ Output  │ runs, wicket, shot_type, delivery_type       │ Ball result               │
+       ├─────────────────┼─────────┼──────────────────────────────────────────────┼───────────────────────────┤
+       │ Outcome Weights │ Logic   │ 25+ modifiers (batsman/bowler/pitch/weather) │ Probability shaping       │
+       ├─────────────────┼─────────┼──────────────────────────────────────────────┼───────────────────────────┤
+       │ Stadium Agent   │ Static  │ dimensions, pitch_type, dew_factor, chase_wr │ Venue constants           │
+       ├─────────────────┼─────────┼──────────────────────────────────────────────┼───────────────────────────┤
+       │ Pitch Agent     │ Dynamic │ batting_ease, pace_eff, spin_eff per over    │ Pitch evolution           │
+       ├─────────────────┼─────────┼──────────────────────────────────────────────┼───────────────────────────┤
+       │ Weather Agent   │ Static  │ humidity, wind, cloud, swing_factor, dew     │ Match conditions          │
+       ├─────────────────┼─────────┼──────────────────────────────────────────────┼───────────────────────────┤
+       │ Captain Agent   │ Dynamic │ field placement, deep_fielders, slips        │ Field positioning         │
+       └─────────────────┴─────────┴──────────────────────────────────────────────┴───────────────────────────┘
+
+       All files are in: /c/Users/prabh/OneDrive/Desktop/gitpk/ipl-panda/ipl-oracle/backend/app/agents/

@@ -22,6 +22,16 @@
         :events="wsEvents"
         :error-message="errorMessage"
       />
+      <div class="cancel-action">
+        <button
+          class="btn btn-danger"
+          :disabled="isCancelling"
+          @click="cancelSimulation"
+        >
+          <span v-if="isCancelling">Cancelling...</span>
+          <span v-else>Cancel Simulation</span>
+        </button>
+      </div>
     </div>
 
     <!-- Error state -->
@@ -87,7 +97,9 @@
         <!-- LLM narrative -->
         <div class="llm-narrative" v-if="result.report.llm_narrative">
           <h3 class="section-label">AI Analysis</h3>
-          <div class="narrative-text">{{ result.report.llm_narrative }}</div>
+          <div class="narrative-text">
+            <p v-for="(para, i) in narrativeParagraphs" :key="i">{{ para }}</p>
+          </div>
         </div>
 
         <!-- Sim summary (multi-sim) -->
@@ -109,20 +121,91 @@
           </div>
         </div>
 
-        <!-- Key moments -->
-        <div class="key-moments" v-if="result.match_result?.key_moments?.length">
-          <h3 class="km-title">Key Moments</h3>
-          <ul class="km-list">
-            <li v-for="(moment, i) in result.match_result.key_moments" :key="i">
-              {{ moment }}
-            </li>
-          </ul>
+        <!-- Hidden Institutional Factors -->
+        <div class="hidden-factors-section" v-if="hasHiddenFactors">
+          <h3 class="section-label">Hidden Institutional Factors</h3>
+          <div class="factors-grid">
+            <div class="factor-card" v-if="hiddenFactors.toss_advantage">
+              <span class="factor-icon">🪙</span>
+              <div class="factor-content">
+                <span class="factor-title">Toss Impact</span>
+                <span class="factor-value">{{ hiddenFactors.toss_advantage }}</span>
+              </div>
+            </div>
+            <div class="factor-card" v-if="hiddenFactors.dew_factor != null">
+              <span class="factor-icon">💧</span>
+              <div class="factor-content">
+                <span class="factor-title">Dew Factor</span>
+                <span class="factor-value" :class="dewSeverityClass">
+                  {{ dewLabel }}
+                </span>
+              </div>
+            </div>
+            <div class="factor-card" v-if="hiddenFactors.boundary_asymmetry">
+              <span class="factor-icon">🏟️</span>
+              <div class="factor-content">
+                <span class="factor-title">Boundary Asymmetry</span>
+                <span class="factor-value">
+                  Straight: {{ hiddenFactors.boundary_asymmetry.straight }}m |
+                  Square: {{ hiddenFactors.boundary_asymmetry.square }}m
+                </span>
+              </div>
+            </div>
+            <div class="factor-card" v-if="hiddenFactors.pitch_type">
+              <span class="factor-icon">🟫</span>
+              <div class="factor-content">
+                <span class="factor-title">Pitch Type</span>
+                <span class="factor-value">{{ hiddenFactors.pitch_type }}</span>
+              </div>
+            </div>
+            <div class="factor-card" v-if="hiddenFactors.pressure_peaks">
+              <span class="factor-icon">📈</span>
+              <div class="factor-content">
+                <span class="factor-title">Pressure Peaks</span>
+                <span class="factor-value">{{ hiddenFactors.pressure_peaks }}</span>
+              </div>
+            </div>
+            <div class="factor-card" v-if="hiddenFactors.ball_replacement_used">
+              <span class="factor-icon">🏏</span>
+              <div class="factor-content">
+                <span class="factor-title">Ball Replacement (2026)</span>
+                <span class="factor-value">{{ hiddenFactors.ball_replacement_used }}</span>
+              </div>
+            </div>
+            <div class="factor-card" v-if="hiddenFactors.avg_win_margin">
+              <span class="factor-icon">📊</span>
+              <div class="factor-content">
+                <span class="factor-title">Avg Win Margin</span>
+                <span class="factor-value">{{ hiddenFactors.avg_win_margin }} runs</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Winning Factors -->
+        <div class="winning-factors-section" v-if="result.winning_factors?.length">
+          <h3 class="section-label">Key Winning Factors</h3>
+          <div class="factors-list">
+            <div
+              class="winning-factor"
+              v-for="(wf, i) in result.winning_factors.slice(0, 5)"
+              :key="i"
+            >
+              <span class="wf-impact" :class="'impact-' + wf.impact?.toLowerCase()">
+                {{ wf.impact }}
+              </span>
+              <div class="wf-detail">
+                <span class="wf-name">{{ wf.factor }}</span>
+                <span class="wf-desc">{{ wf.detail }}</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Caveats -->
         <div class="caveats" v-if="result.report.caveats?.length">
           <div v-for="(c, i) in result.report.caveats" :key="i" class="caveat-item">
-            ℹ️ {{ c }}
+            {{ c }}
           </div>
         </div>
       </div>
@@ -173,6 +256,7 @@ const errorMessage = ref('')
 const result = ref(null)
 const wsEvents = ref([])
 const disclaimer = ref('')
+const isCancelling = ref(false)
 
 let pollInterval = null
 let ws = null
@@ -189,8 +273,34 @@ const modeBadgeLabel = computed(() => {
   return m || ''
 })
 
-const hasPhaseScoring = computed(() => {
-  return result.value?.innings?.innings1?.phase_scoring || result.value?.innings?.innings2?.phase_scoring
+const hiddenFactors = computed(() => {
+  return result.value?.report?.hidden_factors || {}
+})
+
+const hasHiddenFactors = computed(() => {
+  return Object.keys(hiddenFactors.value).length > 0
+})
+
+const dewLabel = computed(() => {
+  const df = hiddenFactors.value.dew_factor
+  if (df == null) return ''
+  if (df < 0.85) return `Heavy dew (${df.toFixed(2)})`
+  if (df < 0.95) return `Moderate dew (${df.toFixed(2)})`
+  return `Minimal dew (${df.toFixed(2)})`
+})
+
+const dewSeverityClass = computed(() => {
+  const df = hiddenFactors.value.dew_factor
+  if (df == null) return ''
+  if (df < 0.85) return 'dew-heavy'
+  if (df < 0.95) return 'dew-moderate'
+  return 'dew-light'
+})
+
+const narrativeParagraphs = computed(() => {
+  const text = result.value?.report?.llm_narrative
+  if (!text) return []
+  return text.split('\n').filter(p => p.trim().length > 0)
 })
 
 const filteredWinProb = computed(() => {
@@ -214,6 +324,22 @@ function formatPlayerName(rawName) {
     return parts.slice(1).join(' ').replace(/([a-z])([A-Z])/g, '$1 $2')
   }
   return rawName
+}
+
+async function cancelSimulation() {
+  isCancelling.value = true
+  try {
+    await axios.post(`/api/simulation/${props.id}/cancel`)
+    sessionStatus.value = 'failed'
+    errorMessage.value = 'Cancelled by user'
+    stopPolling()
+    disconnectWebSocket()
+    simStore.finish()
+  } catch (e) {
+    // Ignore — polling will pick up the state change
+  } finally {
+    isCancelling.value = false
+  }
 }
 
 onMounted(() => {
@@ -336,6 +462,32 @@ function disconnectWebSocket() {
 
 .progress-section {
   margin-bottom: 2rem;
+}
+
+.cancel-action {
+  margin-top: 1rem;
+  text-align: center;
+}
+
+.btn-danger {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid #ef4444;
+  padding: 0.5rem 1.5rem;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: var(--transition);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.25);
+}
+
+.btn-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Scoreboard */
@@ -793,13 +945,138 @@ function disconnectWebSocket() {
 
 .llm-narrative {
   margin-bottom: 1.5rem;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(168, 85, 247, 0.06));
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: var(--border-radius);
+  padding: 1.25rem;
 }
 
 .narrative-text {
   font-size: 0.9rem;
-  line-height: 1.7;
+  line-height: 1.8;
   color: var(--color-text);
-  white-space: pre-line;
+}
+.narrative-text p {
+  margin-bottom: 0.75rem;
+}
+.narrative-text p:last-child {
+  margin-bottom: 0;
+}
+
+/* Hidden Institutional Factors */
+.hidden-factors-section {
+  margin-bottom: 1.5rem;
+}
+
+.factors-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.75rem;
+}
+
+.factor-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--border-radius);
+  padding: 0.75rem;
+}
+
+.factor-icon {
+  font-size: 1.3rem;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.factor-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.factor-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+.factor-value {
+  font-size: 0.85rem;
+  color: var(--color-text);
+}
+
+.dew-heavy { color: #ef4444; font-weight: 600; }
+.dew-moderate { color: #f59e0b; }
+.dew-light { color: #22c55e; }
+
+
+/* Winning Factors */
+.winning-factors-section {
+  margin-bottom: 1.5rem;
+}
+
+.factors-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.winning-factor {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.winning-factor:last-child {
+  border-bottom: none;
+}
+
+.wf-impact {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 3px;
+  flex-shrink: 0;
+  min-width: 55px;
+  text-align: center;
+}
+
+.impact-high {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+.impact-medium {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+.impact-low {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+
+.wf-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.wf-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.wf-desc {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
 }
 
 .sim-summary {

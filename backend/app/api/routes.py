@@ -30,7 +30,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
-from ..config.settings import SimulationMode
+from ..config.settings import SimulationMode, settings
 from ..data.match_state_detector import MatchStateDetector, MatchStatus
 from ..data.schedule_manager import ScheduleManager
 from ..simulation.match_engine import MatchConfig, MatchEngine
@@ -51,7 +51,7 @@ class SimulationStartRequest(BaseModel):
     venue: str = Field(..., description="Full venue name")
     match_start_time: str = Field(..., description="Match start time (ISO 8601)")
     pitch_type: str = Field(default="balanced", description="Pitch type")
-    sim_count: int = Field(default=100, ge=1, le=500, description="Number of parallel simulations to run")
+    sim_count: int = Field(default=10, ge=1, le=50000, description="Number of parallel simulations to run")
     team1_players: list[dict] = Field(default_factory=list, description="Team 1 player profiles")
     team2_players: list[dict] = Field(default_factory=list, description="Team 2 player profiles")
     toss_winner: str | None = Field(default=None)
@@ -90,6 +90,8 @@ class SimulationSession:
         self.completed_at: str | None = None
         self.match_status: MatchStatus | None = None
         self.state_details: dict | None = None
+        # Background asyncio task (for cancellation support)
+        self._task: asyncio.Task | None = None
         # WebSocket listeners for streaming
         self._ws_listeners: list[WebSocket] = []
         self._event_queue: asyncio.Queue = asyncio.Queue()
@@ -242,6 +244,18 @@ async def start_simulation(request: SimulationStartRequest) -> dict:
     # --- Step 4: Resolve simulation mode (auto-downgrade if needed) ---
     requested_mode = request.simulation_mode
     sim_count = request.sim_count
+
+    # Enforce per-mode simulation limits
+    _MODE_LIMITS = {"persona": 100, "hybrid": 100, "probabilistic": 50000}
+    _MODE_DEFAULTS = {"persona": 10, "hybrid": 10, "probabilistic": 500}
+    mode_key = requested_mode.lower()
+    max_for_mode = _MODE_LIMITS.get(mode_key, 100)
+    if sim_count > max_for_mode:
+        sim_count = max_for_mode
+    # Apply default if client sent the generic default (10) and mode is probabilistic
+    if sim_count == 10 and mode_key == "probabilistic":
+        sim_count = _MODE_DEFAULTS["probabilistic"]
+
     effective_mode = _resolve_simulation_mode(requested_mode, sim_count)
 
     # --- Step 5: Build match config ---
@@ -259,10 +273,12 @@ async def start_simulation(request: SimulationStartRequest) -> dict:
         toss_decision=request.toss_decision,
         sim_count=sim_count,
         simulation_mode=effective_mode,
+        persona_llm_trigger=settings.persona_llm_trigger,
     )
 
     # --- Step 6: Run simulation asynchronously ---
-    asyncio.create_task(_run_simulation_task(sim_id, config, sim_count))
+    task = asyncio.create_task(_run_simulation_task(sim_id, config, sim_count))
+    session._task = task
 
     mode_note = ""
     if effective_mode != requested_mode:
@@ -303,6 +319,41 @@ async def get_simulation_status(sim_id: str) -> dict:
         "created_at": session.created_at,
         "completed_at": session.completed_at,
         "error": session.error,
+    }
+
+
+@router.post("/simulation/{sim_id}/cancel")
+async def cancel_simulation(sim_id: str) -> dict:
+    """Cancel a running simulation."""
+    session = _get_session_or_404(sim_id)
+
+    if session.status not in ("pending", "running"):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": f"Simulation is already {session.status} — cannot cancel.",
+                "disclaimer": DISCLAIMER,
+            },
+        )
+
+    # Cancel the background task
+    if session._task and not session._task.done():
+        session._task.cancel()
+
+    session.status = "failed"
+    session.error = "Cancelled by user"
+    session.completed_at = datetime.now(timezone.utc).isoformat()
+
+    await session.broadcast_event({
+        "type": "simulation_cancelled",
+        "message": "Simulation cancelled by user",
+    })
+
+    return {
+        "disclaimer": DISCLAIMER,
+        "simulation_id": sim_id,
+        "status": "cancelled",
+        "message": "Simulation cancelled.",
     }
 
 
@@ -566,6 +617,70 @@ async def _run_simulation_task(
 
         # Aggregate stats across all sims
         summary = runner.get_summary_stats()
+
+        # --- CatBoost blend: 70% simulation + 30% ML prior ---
+        cb_blended = False
+        try:
+            from ..ml.catboost_predictor import get_predictor
+            from ..simulation.blend import blend_with_catboost
+
+            predictor = get_predictor()
+            if predictor.is_available():
+                # Build match state for CatBoost (mid-innings-1 baseline)
+                cb_state = {
+                    "current_over": 10,
+                    "ball_no": 60,
+                    "innings": 1,
+                    "team_runs": int(summary.get("avg_team1_score", 160) / 2),
+                    "team_balls": 60,
+                    "team_wicket": 3,
+                    "runs_target": None,
+                    "batting_team": config.team1,
+                    "bowling_team": config.team2,
+                    "venue": config.venue,
+                    "toss_winner": config.toss_winner,
+                    "toss_decision": config.toss_decision,
+                    "match_month": int(config.match_date.split("-")[1]) if "-" in config.match_date else 4,
+                    "current_batter": None,
+                    "current_bowler": None,
+                }
+                cb_team1_prob = predictor.predict(cb_state)
+                cb_team2_prob = 1.0 - cb_team1_prob
+
+                # Blend sim win percentages (convert from 0-100 to 0-1 for blend)
+                sim_wp = summary.get("win_percentages", {})
+                sim_t1 = sim_wp.get(config.team1, 50.0) / 100.0
+                sim_t2 = sim_wp.get(config.team2, 50.0) / 100.0
+
+                blended_t1 = blend_with_catboost(sim_t1, cb_team1_prob, config.simulation_mode)
+                blended_t2 = blend_with_catboost(sim_t2, cb_team2_prob, config.simulation_mode)
+
+                # Normalize to sum to 100
+                total = blended_t1 + blended_t2
+                if total > 0:
+                    summary["win_percentages"][config.team1] = round(blended_t1 / total * 100, 1)
+                    summary["win_percentages"][config.team2] = round(blended_t2 / total * 100, 1)
+
+                summary["catboost_blend"] = {
+                    "enabled": True,
+                    "cb_weight": 0.30,
+                    "sim_weight": 0.70,
+                    "cb_team1_prob": round(cb_team1_prob * 100, 1),
+                    "cb_team2_prob": round(cb_team2_prob * 100, 1),
+                    "raw_sim_team1": round(sim_t1 * 100, 1),
+                    "raw_sim_team2": round(sim_t2 * 100, 1),
+                }
+                cb_blended = True
+                logger.info(
+                    "CatBoost blend applied: %s %.1f%% / %s %.1f%%",
+                    config.team1, summary["win_percentages"][config.team1],
+                    config.team2, summary["win_percentages"][config.team2],
+                )
+        except Exception as exc:
+            logger.warning("CatBoost blend skipped: %s", exc)
+
+        if not cb_blended:
+            summary["catboost_blend"] = {"enabled": False}
 
         # Generate statistical report
         report_agent = ReportAgent(simulation_id=sim_id)
@@ -943,12 +1058,10 @@ def _resolve_simulation_mode(requested: str, sim_count: int) -> str:
     Auto-downgrade simulation mode based on sim count to prevent cost explosion.
 
     Rules:
-    - PERSONA mode: max 10 sims. >10 → downgrade to HYBRID.
-    - HYBRID mode: max 100 sims. >100 → downgrade to PROBABILISTIC.
-    - PROBABILISTIC: no limit.
+    - PERSONA mode: max 100 sims. Over limit → downgrade to HYBRID.
+    - HYBRID mode: max 100 sims. Over limit → downgrade to PROBABILISTIC.
+    - PROBABILISTIC: max 50,000 sims.
     """
-    from ..config.settings import settings, SimulationMode
-
     mode = requested.lower()
     if mode not in (SimulationMode.PERSONA, SimulationMode.HYBRID, SimulationMode.PROBABILISTIC):
         mode = SimulationMode.HYBRID

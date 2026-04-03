@@ -501,6 +501,7 @@ class AgentFactory:
             is_left_arm_bowler=is_left_arm_bowler,
             age=age,
             experience_years=experience_years,
+            personality=player_data.get("personality", ""),
         )
 
         # Load LLM persona (for PERSONA and HYBRID modes)

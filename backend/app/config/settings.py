@@ -17,16 +17,33 @@ class SimulationMode(str, Enum):
     Controls how much LLM involvement each simulation gets.
 
     PERSONA      — Full LLM persona mode. Every ball decided by LLM-as-cricketer.
-                   Team communication enabled. Best for 1-10 sims (showcase).
+                   Team communication enabled. Default 10, max 100 sims.
     HYBRID       — LLM at high-leverage moments only, with persona prompts.
-                   Communication via templates. Best for 10-100 sims (production).
+                   Communication via templates. Default 10, max 100 sims.
     PROBABILISTIC — Zero LLM calls. Pure weighted probability sampling.
-                    Current/legacy behavior. Best for 100-500 sims (fast).
+                    Current/legacy behavior. Default 500, max 50,000 sims.
     """
 
     PERSONA = "persona"
     HYBRID = "hybrid"
     PROBABILISTIC = "probabilistic"
+
+
+class PersonaLLMTrigger(str, Enum):
+    """
+    Controls LLM call granularity in PERSONA mode only.
+
+    PER_OVER    — Batch plan once per over (2 LLM calls/over). Default.
+                  Good balance of persona fidelity and speed/cost.
+    PER_BALL    — Individual LLM call per ball (2 calls/ball = 12/over).
+                  Maximum fidelity, highest cost. Best for 1-3 sims.
+    PER_WICKET  — LLM fires only on wicket falls + start of over 1.
+                  Rest is probabilistic. Cheapest persona mode.
+    """
+
+    PER_OVER = "per_over"
+    PER_BALL = "per_ball"
+    PER_WICKET = "per_wicket"
 
 
 class Settings(BaseSettings):
@@ -41,16 +58,26 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # Simulation
     # ------------------------------------------------------------------
-    default_sim_count: int = 100
-    max_parallel_sims: int = 10
-    llm_pressure_threshold: float = 0.85
+    default_sim_count: int = 10
+    max_parallel_sims: int = 25
+    llm_pressure_threshold: float = 0.65
 
     # Simulation mode: "persona", "hybrid", or "probabilistic"
     default_simulation_mode: str = "hybrid"
 
-    # Auto-downgrade thresholds: if sim_count exceeds these, mode downgrades
-    persona_max_sims: int = 10       # >10 sims → downgrade persona to hybrid
-    hybrid_max_sims: int = 100       # >100 sims → downgrade hybrid to probabilistic
+    # Persona mode LLM trigger granularity: per_over | per_ball | per_wicket
+    # Only applies when simulation_mode = "persona". Ignored in hybrid/probabilistic.
+    persona_llm_trigger: str = "per_over"
+
+    # Per-mode limits: persona/hybrid max 100, probabilistic max 50000
+    persona_max_sims: int = 100      # max sims allowed in persona mode
+    hybrid_max_sims: int = 100       # max sims allowed in hybrid mode
+    probabilistic_max_sims: int = 50000  # max sims allowed in probabilistic mode
+
+    # Per-mode defaults (when no explicit count given)
+    persona_default_sims: int = 10
+    hybrid_default_sims: int = 10
+    probabilistic_default_sims: int = 500
 
     # Tiered LLM model selection (by pressure level)
     llm_model_routine: str = ""      # Low pressure (<0.5): cheap/fast model

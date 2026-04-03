@@ -4,6 +4,8 @@ BowlingChangeSkill — Captain/coach pick next bowler with persona reasoning.
 
 from __future__ import annotations
 
+from app.services.json_repair import parse_llm_json
+
 import json
 import logging
 from typing import Any, TYPE_CHECKING
@@ -77,7 +79,7 @@ class BowlingChangeSkill(BaseSkill):
         try:
             response = await agent.think(prompt=prompt, context=situation, require_llm=True)
             if response:
-                return json.loads(response)
+                return parse_llm_json(response)
         except Exception as exc:
             logger.warning("Bowling change LLM failed: %s", exc)
 

@@ -185,7 +185,7 @@ class BaseAgent(ABC):
 
         Calls claude-sonnet-4-6 when:
         - ANTHROPIC_API_KEY is set, AND
-        - pressure_index in context >= LLM_PRESSURE_THRESHOLD (0.85), OR require_llm=True
+        - pressure_index in context >= LLM_PRESSURE_THRESHOLD (0.65), OR require_llm=True
 
         Falls back to None (probabilistic path) when not enabled or below threshold.
 

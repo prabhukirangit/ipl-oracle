@@ -1,8 +1,7 @@
 """
 ParallelRunner — Runs multiple match simulations in parallel.
 
-Week 1: Sequential single simulation.
-Week 3+: Up to 500 parallel sims via asyncio.gather() in batches of 10.
+Up to 50,000 parallel sims via asyncio.gather() in batches of 25.
 
 Each sim gets:
 - Shared read-only agent profiles (from MatchConfig)
@@ -25,16 +24,15 @@ from .match_engine import MatchEngine, MatchConfig, MatchResult
 
 logger = logging.getLogger(__name__)
 
-BATCH_SIZE = 10
-BATCH_PAUSE_SECONDS = 2.0  # rate limiting pause between batches
+BATCH_SIZE = 25
+BATCH_PAUSE_SECONDS = 0.3  # brief pause between batches (was 2.0s — cut dead time)
 
 
 class ParallelRunner:
     """
     Orchestrates parallel match simulations.
 
-    Week 1: Always runs 1 simulation synchronously.
-    Week 3: Will run up to 100 parallel simulations in batches.
+    Single sim runs directly; multiple sims run in batches of 25 via asyncio.gather().
     """
 
     def __init__(
@@ -54,7 +52,7 @@ class ParallelRunner:
         # Auto-downgrade simulation mode based on sim count
         mode = getattr(config, "simulation_mode", "hybrid")
         original_mode = mode
-        if mode == "persona" and sim_count > 10:
+        if mode == "persona" and sim_count > 100:
             mode = "hybrid"
         if mode == "hybrid" and sim_count > 100:
             mode = "probabilistic"
@@ -78,8 +76,7 @@ class ParallelRunner:
         """
         Run all simulations and return results.
 
-        In Week 1 this runs a single simulation synchronously.
-        In Week 3+ this will batch 10 sims at a time.
+        Single sim runs directly; multiple sims run in batches of 25.
 
         Returns:
             List of MatchResult objects from all simulations.
@@ -88,12 +85,10 @@ class ParallelRunner:
         self._errors = []
 
         if self._sim_count == 1:
-            # Week 1: single simulation
             result = await self._run_single_sim(sim_index=0)
             if result:
                 self._results.append(result)
         else:
-            # Week 3+: batched parallel execution
             await self._run_batched()
 
         return self._results
@@ -101,8 +96,9 @@ class ParallelRunner:
     async def _run_single_sim(self, sim_index: int) -> MatchResult | None:
         """Run a single simulation with a deterministic seed."""
         seed = sim_index * 42
-        # Create a copy of config with unique run_id
-        config_copy = copy.deepcopy(self._config)
+        # Shallow copy is safe — MatchConfig fields are read-only during simulation.
+        # Agent mutable state is created fresh inside MatchEngine.__init__().
+        config_copy = copy.copy(self._config)
         config_copy.sim_count = 1
 
         try:

@@ -6,6 +6,8 @@ PERSONA mode only — generates a descriptive field setup.
 
 from __future__ import annotations
 
+from app.services.json_repair import parse_llm_json
+
 import json
 import logging
 import random
@@ -85,7 +87,7 @@ class FieldPlacementSkill(BaseSkill):
         try:
             response = await agent.think(prompt=prompt, context=situation, require_llm=True)
             if response:
-                return json.loads(response)
+                return parse_llm_json(response)
         except Exception as exc:
             logger.warning("Field placement LLM failed: %s", exc)
 

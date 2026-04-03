@@ -8,6 +8,8 @@ In PROBABILISTIC mode: Returns a heuristic decision based on stats (no LLM).
 
 from __future__ import annotations
 
+from app.services.json_repair import parse_llm_json
+
 import json
 import logging
 import random
@@ -85,14 +87,12 @@ class BattingDecisionSkill(BaseSkill):
             "No markdown, no explanation — just the JSON object."
         )
 
-        bowling_info = ""
-        if bowling:
-            bowling_info = (
-                f"\nThe bowler is planning: {bowling.get('delivery_type', 'unknown')} "
-                f"on {bowling.get('line', 'unknown')} line, {bowling.get('length', 'unknown')} length."
-            )
+        # NOTE: We intentionally do NOT reveal the bowling plan to the batsman.
+        # In real cricket, a batsman walks in with intent before seeing the delivery.
+        # The bowling_decision is only used by the OutcomeResolver to determine
+        # the matchup interaction (e.g., slog vs yorker = high wicket probability).
 
-        user_prompt = f"{narrative}{bowling_info}\n\nWhat is your batting decision for this ball?"
+        user_prompt = f"{narrative}\n\nWhat is your batting decision for this ball?"
 
         try:
             response = await agent.think(
@@ -104,7 +104,7 @@ class BattingDecisionSkill(BaseSkill):
 
             if response:
                 # Parse structured output
-                parsed = json.loads(response)
+                parsed = parse_llm_json(response)
                 decision = BattingDecision(**parsed)
                 agent.log_decision(
                     decision_type="persona_batting",

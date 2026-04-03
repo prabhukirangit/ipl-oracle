@@ -120,9 +120,15 @@ def _generate_persona(player_name: str, profile: dict[str, Any]) -> dict[str, An
 
     hand = "left" if "left" in batting_style.lower() else "right"
 
+    # Inject personality adjectives from SQUAD_SEED if available
+    personality = profile.get("personality", "")
+    personality_line = ""
+    if personality:
+        personality_line = f"Your playing character: {personality}. "
+
     system_prompt = (
         f"You are {player_name}, a professional IPL cricketer playing for {team}. "
-        f"You bat {hand}-handed. {mental} "
+        f"You bat {hand}-handed. {personality_line}{mental} "
         f"You make every decision as {player_name} would — with your specific strengths, "
         f"weaknesses, instincts, and competitive nature. "
         f"Stay in character. Think like a real T20 cricketer under match pressure."
