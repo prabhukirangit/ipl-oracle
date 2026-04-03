@@ -91,6 +91,7 @@ results/
 # ---- Root markdown files: ignore all root .md except README.md ----
 /*.md
 !/README.md
+!/LICENSE.md
 
 # Specific historical file exceptions (kept for clarity; already covered by rule)
 # VERIFICATION_REPORT.md  # covered by /*.md
