@@ -75,9 +75,7 @@ backend/data/
 .DS_Store
 Thumbs.db
 
-# ---- CatBoost model artifacts & training cache ----
-backend/app/ml/models/*.cbm
-backend/app/ml/models/*.cbm.meta
+# ---- CatBoost training cache ----
 catboost_info/
 
 # ---- Dataset (large CSV files) ----
