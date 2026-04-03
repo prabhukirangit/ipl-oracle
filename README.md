@@ -31,6 +31,9 @@ IPL Oracle builds a digital cricket world that plays itself out via Monte Carlo 
 - **Report Agent** — ReACT loop with tool-calling, win probability with 95% CI, score distribution histograms, aggregate winning factors (no player names — systemic factors only), bold scoreline prediction
 
 ---
+## Demo
+
+https://github.com/user-attachments/assets/3c5e3218-6444-438f-b9e9-9ca4143d5719
 
 ## Architecture
 
