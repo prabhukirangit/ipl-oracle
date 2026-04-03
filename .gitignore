@@ -78,8 +78,8 @@ Thumbs.db
 # ---- CatBoost training cache ----
 catboost_info/
 
-# ---- Dataset (large CSV files) ----
-Dataset/
+# ---- Dataset ----
+# Dataset/IPL.csv is the filtered 2020-2025 dataset (37MB) — committed
 
 # ---- Simulation results (local output) ----
 results/
