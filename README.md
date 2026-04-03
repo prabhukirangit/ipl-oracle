@@ -157,8 +157,8 @@ IPL Oracle supports three simulation modes. The number of simulations is fully c
 
 | Mode | Default Sims | Max Sims | LLM Calls | Approx. Time (10 sims) | Best For |
 |------|-------------|----------|-----------|------------------------|----------|
-| **Persona** | 10 | 100 | Every ball (~240/sim) | ~3-5 min | Deep analysis, maximum realism |
-| **Hybrid** | 10 | 100 | ~15-20% of balls (~40/sim) | ~1-2 min | Best balance of speed and intelligence |
+| **Persona** | 10 | 100 | ~80/sim (over-level batched) | ~10-15 min | Deep analysis, maximum realism |
+| **Hybrid** | 10 | 100 | ~15-20% of balls (~40/sim) | ~3-5 min | Best balance of speed and intelligence |
 | **Probabilistic** | 500 | 50,000 | None | ~5-10 sec | Bulk Monte Carlo, no LLM cost |
 
 **Guidance:**
