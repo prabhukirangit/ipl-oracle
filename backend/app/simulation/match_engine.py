@@ -182,6 +182,11 @@ class MatchConfig:
     sim_count: int = 1  # Week 1: always 1
     simulation_mode: str = "hybrid"  # "persona", "hybrid", or "probabilistic"
     persona_llm_trigger: str = "per_over"  # "per_over", "per_ball", "per_wicket" (persona mode only)
+    # Live match state — when set, simulation resumes from this point
+    # Keys: innings_complete (0|1), batting_team, bowling_team,
+    #        score, wickets, overs (float, e.g. 12.3), target (int|None),
+    #        innings1_score (int|None — set when innings_complete==1)
+    live_state: dict | None = None
 
 
 @dataclass
@@ -422,42 +427,49 @@ class MatchEngine:
 
     async def simulate(self) -> MatchResult:
         """
-        Run a full match simulation.
+        Run a full match simulation, or resume from live state if available.
+
+        When ``self._config.live_state`` is set the engine skips already-
+        completed play and simulates only the remaining balls.
 
         Returns:
             MatchResult with all match data and the disclaimer.
         """
-        # Determine toss
         # Umpire Decision Variance initialized per match
         self._umpire_strictness = self._rng.uniform(0.85, 1.15)
-        
-        toss_winner, toss_decision = self._resolve_toss()
-        # Set batting / fielding order
-        if toss_decision == "bat":
-            batting_first = toss_winner
-            fielding_first = self._config.team2 if toss_winner == self._config.team1 else self._config.team1
+
+        live = self._config.live_state
+
+        if live:
+            # --- LIVE match: resume from current state ---
+            innings1, innings2, toss_winner, toss_decision, batting_first, target = (
+                await self._simulate_live(live)
+            )
         else:
-            fielding_first = toss_winner
-            batting_first = self._config.team2 if toss_winner == self._config.team1 else self._config.team1
+            # --- Normal full-match simulation ---
+            toss_winner, toss_decision = self._resolve_toss()
+            if toss_decision == "bat":
+                batting_first = toss_winner
+                fielding_first = self._config.team2 if toss_winner == self._config.team1 else self._config.team1
+            else:
+                fielding_first = toss_winner
+                batting_first = self._config.team2 if toss_winner == self._config.team1 else self._config.team1
 
-        # Run innings 1
-        innings1 = await self._simulate_innings(
-            batting_team=batting_first,
-            bowling_team=fielding_first,
-            innings_number=1,
-            target=None,
-        )
+            innings1 = await self._simulate_innings(
+                batting_team=batting_first,
+                bowling_team=fielding_first,
+                innings_number=1,
+                target=None,
+            )
 
-        # Set target for innings 2
-        target = innings1.total_score + 1
+            target = innings1.total_score + 1
 
-        # Run innings 2
-        innings2 = await self._simulate_innings(
-            batting_team=fielding_first,
-            bowling_team=batting_first,
-            innings_number=2,
-            target=target,
-        )
+            innings2 = await self._simulate_innings(
+                batting_team=fielding_first,
+                bowling_team=batting_first,
+                innings_number=2,
+                target=target,
+            )
 
         # Determine winner
         winner, win_type, win_margin = self._determine_winner(innings1, innings2, target)
@@ -485,6 +497,94 @@ class MatchEngine:
         )
 
         return result
+
+    # ------------------------------------------------------------------
+    # LIVE match resumption
+    # ------------------------------------------------------------------
+
+    async def _simulate_live(
+        self, live: dict,
+    ) -> tuple[InningsResult, InningsResult, str, str, str, int]:
+        """
+        Resume simulation from a live match state.
+
+        Returns (innings1, innings2, toss_winner, toss_decision, batting_first, target).
+        """
+        innings_complete = live.get("innings_complete", 0)
+        batting_team = live.get("batting_team", "")
+        bowling_team = live.get("bowling_team", "")
+        live_score = live.get("score", 0)
+        live_wickets = live.get("wickets", 0)
+        live_overs = float(live.get("overs", 0))
+
+        # Toss already happened in a live match — use config or infer
+        toss_winner = self._config.toss_winner or batting_team
+        toss_decision = self._config.toss_decision or "bat"
+
+        # Determine who batted first from live context
+        if innings_complete >= 1:
+            # Innings 1 done — current batting team is batting second
+            batting_first = bowling_team
+            fielding_first = batting_team
+        else:
+            # Still in innings 1 — current batting team is batting first
+            batting_first = batting_team
+            fielding_first = bowling_team
+
+        if innings_complete == 0:
+            # --- Mid innings 1: simulate remainder of innings 1, then full innings 2 ---
+            start_over = int(live_overs)
+            start_ball = round((live_overs - start_over) * 10)  # e.g. 12.3 → ball 3
+
+            innings1 = await self._simulate_innings(
+                batting_team=batting_first,
+                bowling_team=fielding_first,
+                innings_number=1,
+                target=None,
+                start_score=live_score,
+                start_wickets=live_wickets,
+                start_over=start_over,
+                start_ball=start_ball,
+            )
+
+            target = innings1.total_score + 1
+
+            innings2 = await self._simulate_innings(
+                batting_team=fielding_first,
+                bowling_team=batting_first,
+                innings_number=2,
+                target=target,
+            )
+
+        else:
+            # --- Innings 1 complete, mid innings 2: use actual innings 1 score ---
+            innings1_score = live.get("innings1_score", 0)
+
+            innings1 = InningsResult(
+                team=batting_first,
+                batting_order=[],
+                total_score=innings1_score,
+                wickets=0,  # not known, not needed for remaining sim
+                overs_played=20.0,
+            )
+
+            target = innings1_score + 1
+
+            start_over = int(live_overs)
+            start_ball = round((live_overs - start_over) * 10)
+
+            innings2 = await self._simulate_innings(
+                batting_team=fielding_first,
+                bowling_team=batting_first,
+                innings_number=2,
+                target=target,
+                start_score=live_score,
+                start_wickets=live_wickets,
+                start_over=start_over,
+                start_ball=start_ball,
+            )
+
+        return innings1, innings2, toss_winner, toss_decision, batting_first, target
 
     # ------------------------------------------------------------------
     # Over-level batch planning
@@ -565,15 +665,25 @@ class MatchEngine:
         bowling_team: str,
         innings_number: int,
         target: int | None,
+        start_score: int = 0,
+        start_wickets: int = 0,
+        start_over: int = 0,
+        start_ball: int = 0,
     ) -> InningsResult:
         """
-        Simulate one full innings (up to 20 overs or 10 wickets).
+        Simulate one innings (up to 20 overs or 10 wickets).
+
+        For LIVE matches, ``start_*`` params resume from mid-innings.
 
         Args:
             batting_team: Name of the batting team
             bowling_team: Name of the bowling team
             innings_number: 1 or 2
             target: Target to chase (None for first innings)
+            start_score: Starting score (for live match resumption)
+            start_wickets: Starting wickets fallen (for live match resumption)
+            start_over: Starting over number, 0-indexed (for live match resumption)
+            start_ball: Starting ball within the over (for live match resumption)
 
         Returns:
             InningsResult with full innings data
@@ -595,9 +705,9 @@ class MatchEngine:
             # Fallback: use all players as bowlers
             bowlers = list(bowling_agents.values())
 
-        # Innings state
-        score = 0
-        wickets = 0
+        # Innings state — initialise from live state when resuming
+        score = start_score
+        wickets = start_wickets
         extras = 0
         boundaries = 0
         sixes = 0
@@ -607,18 +717,27 @@ class MatchEngine:
         bowler_overs: dict[str, int] = {}  # balls bowled per bowler
         consecutive_dots = 0  # Track consecutive dot balls for pressure contagion
 
-        # Batting state
+        # Batting state — advance past dismissed batsmen
         current_batsman_idx = 0
         non_striker_idx = 1
         # Ensure we have at least 2 batsmen
         if len(batting_order) < 2:
             batting_order = batting_order + batting_order  # duplicate if needed
 
+        # When resuming mid-innings, skip past already-dismissed batsmen
+        next_in_idx = 2 + start_wickets
+        if start_wickets > 0:
+            current_batsman_idx = start_wickets
+            non_striker_idx = start_wickets + 1
+            if current_batsman_idx >= len(batting_order):
+                current_batsman_idx = len(batting_order) - 1
+            if non_striker_idx >= len(batting_order):
+                non_striker_idx = current_batsman_idx
+
         current_batsman = batting_order[current_batsman_idx]
         non_striker = batting_order[non_striker_idx] if len(batting_order) > 1 else current_batsman
         batsman_balls_faced: dict[str, int] = {}
         batsman_runs: dict[str, int] = {}
-        next_in_idx = 2
 
         # Bowling rotation
         current_bowler: PlayerAgent | None = None
@@ -635,7 +754,7 @@ class MatchEngine:
         if not persona_trigger:
             persona_trigger = "per_over"
 
-        for over in range(self._config.max_overs):
+        for over in range(start_over, self._config.max_overs):
             # Choose bowler for this over (can't bowl two consecutive overs)
             available_bowlers = [
                 b for b in bowlers
@@ -715,7 +834,8 @@ class MatchEngine:
             weather_condition = self._weather_agent.get_conditions_at_over(over, innings_number)
 
             # Simulate 6 balls in this over
-            legal_balls = 0
+            # When resuming mid-over, skip already-bowled balls
+            legal_balls = start_ball if over == start_over and start_ball > 0 else 0
             while legal_balls < 6:
 
                 # Compute fatigue

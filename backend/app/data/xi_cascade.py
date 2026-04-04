@@ -132,31 +132,42 @@ async def fetch_playing_xi(
 # Source implementations
 # ---------------------------------------------------------------------------
 
+async def _iplt20_session(team1: str, team2: str) -> dict[str, Any] | None:
+    """Full IPLT20 Playwright session (runs inside ProactorEventLoop on Windows)."""
+    from app.data.iplt20_scraper import IPLT20Scraper
+    async with IPLT20Scraper() as scraper:
+        return await scraper.get_playing_xi(team1, team2)
+
+
 async def _try_iplt20(team1: str, team2: str) -> dict[str, Any] | None:
     """Try fetching playing XI from iplt20.com."""
     try:
-        from app.data.iplt20_scraper import IPLT20Scraper
-        async with IPLT20Scraper() as scraper:
-            return await scraper.get_playing_xi(team1, team2)
+        from app.data._playwright_windows import run_playwright
+        return await run_playwright(_iplt20_session, team1, team2)
     except Exception as exc:
         logger.warning("XI Cascade: IPLT20 failed — %s", exc)
         return None
 
 
-async def _try_cricbuzz(team1: str, team2: str) -> dict[str, Any] | None:
-    """
-    Try fetching playing XI from Cricbuzz.
+async def _cricbuzz_session(team1: str, team2: str) -> dict[str, Any] | None:
+    """Full Cricbuzz Playwright session (runs inside ProactorEventLoop on Windows)."""
+    import re
+    from app.data.cricbuzz_scraper import CricbuzzScraper
 
-    Cricbuzz needs a match_id. We search the homepage for today's IPL match
-    matching both team names, extract the match ID, then fetch XI.
-    """
+    async with CricbuzzScraper() as scraper:
+        # Find match ID from schedule page
+        match_id = await _find_cricbuzz_match_id(scraper, team1, team2)
+        if match_id:
+            return await scraper.get_playing_xi(match_id)
+        logger.info("XI Cascade: Cricbuzz — could not find match_id for %s vs %s", team1, team2)
+        return None
+
+
+async def _try_cricbuzz(team1: str, team2: str) -> dict[str, Any] | None:
+    """Try fetching playing XI from Cricbuzz."""
     try:
-        from app.data.cricbuzz_scraper import CricbuzzScraper
-        async with CricbuzzScraper() as scraper:
-            match_id = await _find_cricbuzz_match_id(scraper, team1, team2)
-            if match_id:
-                return await scraper.get_playing_xi(match_id)
-            logger.info("XI Cascade: Cricbuzz — could not find match_id for %s vs %s", team1, team2)
+        from app.data._playwright_windows import run_playwright
+        return await run_playwright(_cricbuzz_session, team1, team2)
     except Exception as exc:
         logger.warning("XI Cascade: Cricbuzz failed — %s", exc)
     return None

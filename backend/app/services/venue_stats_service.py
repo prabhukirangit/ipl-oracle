@@ -121,11 +121,14 @@ class VenueStatsService:
 
         try:
             from app.data.playwright_scraper import ESPNCricinfoScraper
+            from app.data._playwright_windows import run_playwright
 
-            async with ESPNCricinfoScraper() as scraper:
-                # 1.5s delay for venue queries as per spec
-                await asyncio.sleep(1.5)
-                stats = await scraper.get_player_venue_stats(player_name, ground_id)
+            async def _espn_session(pname: str, gid: str) -> dict[str, Any]:
+                async with ESPNCricinfoScraper() as scraper:
+                    await asyncio.sleep(1.5)
+                    return await scraper.get_player_venue_stats(pname, gid)
+
+            stats = await run_playwright(_espn_session, player_name, ground_id)
 
             if not stats or stats.get("innings", 0) == 0:
                 logger.debug("No venue data found for '%s' at '%s'", player_name, venue)

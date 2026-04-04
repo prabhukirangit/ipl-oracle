@@ -183,11 +183,24 @@ async def start_simulation(request: SimulationStartRequest) -> dict:
     Always includes disclaimer in response.
     """
     # --- Step 1: Match state detection (MUST run before anything else) ---
-    match_info = {
+    match_info: dict[str, Any] = {
         "match_start_time": request.match_start_time,
         "status": "upcoming",
     }
     match_status, state_details = state_detector.detect(match_info)
+
+    # --- Step 1b: If LIVE, fetch actual live score ---
+    live_state: dict | None = None
+    if match_status == MatchStatus.LIVE:
+        live_state = await _fetch_live_score(request.team1, request.team2)
+        if live_state:
+            state_details["current_score"] = live_state.get("score")
+            state_details["current_over"] = live_state.get("overs")
+            logger.info(
+                "Live score fetched: %s/%s (%.1f overs) — %s batting",
+                live_state.get("score"), live_state.get("wickets"),
+                live_state.get("overs", 0), live_state.get("batting_team"),
+            )
 
     if match_status == MatchStatus.COMPLETED:
         raise HTTPException(
@@ -258,6 +271,9 @@ async def start_simulation(request: SimulationStartRequest) -> dict:
 
     effective_mode = _resolve_simulation_mode(requested_mode, sim_count)
 
+    # Update session with actual sim_count (may differ from request after auto-upgrade)
+    session.sims_total = sim_count
+
     # --- Step 5: Build match config ---
     config = MatchConfig(
         match_id=request.match_id,
@@ -274,6 +290,7 @@ async def start_simulation(request: SimulationStartRequest) -> dict:
         sim_count=sim_count,
         simulation_mode=effective_mode,
         persona_llm_trigger=settings.persona_llm_trigger,
+        live_state=live_state,
     )
 
     # --- Step 6: Run simulation asynchronously ---
@@ -1073,6 +1090,64 @@ def _resolve_simulation_mode(requested: str, sim_count: int) -> str:
         mode = SimulationMode.PROBABILISTIC
 
     return mode
+
+
+async def _fetch_live_score(team1: str, team2: str) -> dict | None:
+    """
+    Fetch the current live score for an in-progress match via Cricbuzz.
+
+    Returns a dict with keys: score, wickets, overs, batting_team,
+    bowling_team, innings_complete, innings1_score — or None on failure.
+
+    The result is structured for direct use as MatchConfig.live_state.
+    """
+    try:
+        from ..data._playwright_windows import run_playwright
+
+        async def _cricbuzz_live(t1: str, t2: str) -> dict | None:
+            import re
+            from ..data.cricbuzz_scraper import CricbuzzScraper
+
+            async with CricbuzzScraper() as scraper:
+                # Find match ID from schedule page
+                from ..data.xi_cascade import _find_cricbuzz_match_id
+                match_id = await _find_cricbuzz_match_id(scraper, t1, t2)
+                if not match_id:
+                    return None
+                return await scraper.get_live_score(match_id)
+
+        raw = await run_playwright(_cricbuzz_live, team1, team2)
+        if not raw or raw.get("score", 0) == 0 and raw.get("match_status") == "unknown":
+            logger.info("Live score fetch returned empty/unknown — will simulate from start")
+            return None
+
+        overs = float(raw.get("overs", 0))
+        batting_team = raw.get("batting_team", team1)
+        bowling_team = raw.get("bowling_team", team2)
+
+        # Determine innings state from match status text
+        status_text = raw.get("match_status", "").lower()
+        # "innings break" or second team batting → innings 1 complete
+        innings_complete = 0
+        innings1_score: int | None = None
+        if "break" in status_text or "innings" in status_text:
+            # Between innings — simulate full innings 2
+            innings_complete = 1
+            innings1_score = raw.get("score", 0)
+
+        return {
+            "score": raw.get("score", 0),
+            "wickets": raw.get("wickets", 0),
+            "overs": overs,
+            "batting_team": batting_team,
+            "bowling_team": bowling_team,
+            "innings_complete": innings_complete,
+            "innings1_score": innings1_score,
+        }
+
+    except Exception as exc:
+        logger.warning("Live score fetch failed — will simulate from start: %s", exc)
+        return None
 
 
 async def _fetch_rosters_cascade(

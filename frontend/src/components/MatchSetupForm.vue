@@ -87,13 +87,13 @@
         <div class="form-group">
           <label class="form-label" for="sim-count">
             Simulations
-            <span class="form-badge">1–{{ simCountMax.toLocaleString() }} parallel runs</span>
+            <span class="form-badge">{{ simCountMin }}–{{ simCountMax.toLocaleString() }} parallel runs</span>
           </label>
           <input
             id="sim-count"
             type="number"
             v-model.number="formData.simCount"
-            min="1"
+            :min="simCountMin"
             :max="simCountMax"
             class="form-input"
           />
@@ -154,7 +154,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 
 const props = defineProps({
   match: {
@@ -195,6 +195,10 @@ const modeHint = computed(() => {
   return hints[formData.simulationMode] || hints.hybrid
 })
 
+const simCountMin = computed(() => {
+  return formData.simulationMode === 'probabilistic' ? 500 : 1
+})
+
 const simCountMax = computed(() => {
   const limits = { persona: 100, hybrid: 100, probabilistic: 50000 }
   return limits[formData.simulationMode] || 100
@@ -205,9 +209,18 @@ const simCountHint = computed(() => {
     return 'Persona mode: max 100 sims. Each sim has full LLM impersonation per ball.'
   }
   if (formData.simulationMode === 'probabilistic') {
-    return 'Fast mode: up to 50,000 sims. Pure probability — no LLM cost. Default: 500.'
+    return 'Fast mode: min 500, up to 50,000 sims. Pure probability — no LLM cost.'
   }
   return 'More simulations = higher confidence intervals. Default: 10, max 100.'
+})
+
+// Auto-adjust simCount when mode changes
+watch(() => formData.simulationMode, (mode) => {
+  if (mode === 'probabilistic' && formData.simCount < 500) {
+    formData.simCount = 500
+  } else if (mode !== 'probabilistic' && formData.simCount > simCountMax.value) {
+    formData.simCount = 10
+  }
 })
 
 function handleSubmit() {
@@ -218,7 +231,7 @@ function handleSubmit() {
     venue: props.match.venue,
     matchStartTime: props.match.match_start_time,
     pitchType: formData.pitchType,
-    simCount: Math.min(formData.simCount, simCountMax.value),
+    simCount: Math.max(simCountMin.value, Math.min(formData.simCount, simCountMax.value)),
     simulationMode: formData.simulationMode,
     tossWinner: formData.tossWinner || null,
     tossDecision: formData.tossDecision || null,
